@@ -9,6 +9,7 @@ The framework relies on hardware features of an interrupt controller: its abilit
 
 There are only three types of objects: actor, queue and message. 
 After initialization it is expected that all actors are subscribed to some queues. When some event (hardware interrupt) occurs, it allocates and post message to some queue, this causes activation of subscribed actor, moving the message into its incoming mailbox, moving actor to the list of ready ones and also triggering interrupt vector corresponding to actor's priority. After leaving this handler hardware automatically transfers control to our activated vector, its handler then calls framework's function 'schedule' which eventually calls activated actors which starts processing its message. 
+
 During this process the system remains fully preemptable and asynchronous: another interrupts may post messages to other queues, if corresponding actors have less priority then messages will just being accumulated in queues. When some actor or interrupt activate another high-priority actor then preemption occurs immediately, so, this system has good responde times and less jitter than loop-based solutions.
 Normally actor model does not require explicit synchronization like semaphores and mutexes. For example, mutual exclusion may be represented as multiple actors posting their requests to single queue and one actor associated with that queue will do all the work sequentially. Nevertheless, in practice it is often desirable to block preemption. This may be done using hardware features or interrupt locking.
 

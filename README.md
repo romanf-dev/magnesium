@@ -54,7 +54,7 @@ Select next actor to run. Should be called insode vectors designated to actors.
 
 Message management:
 
-        struct mg_message_t* mg_message_alloc(struct mg_message_pool_t* pool);
+        void* mg_message_alloc(struct mg_message_pool_t* pool);
         void mg_message_free(struct mg_message_t* msg);
 
 
@@ -78,6 +78,15 @@ How to use
 3. Initialize message pools, queues and objects in your main(), initialize interrupt controller registers and priorities
 4. Put calls to alloc/push in interrupt handlers associated with devices
 5. Put calls to schedule in interrupt handlers associated with actors
+
+
+Demo
+----
+
+The demo is a toy example with just one actor which blinks the LED on the STM32 Bluepill board.
+Building:
+
+        make MG_DIR=..
 
 
 Why 'Magnesium'

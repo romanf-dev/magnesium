@@ -49,6 +49,8 @@ struct mg_message_pool_t {
     bool array_space_available;
 };
 
+_Static_assert(offsetof(struct mg_message_pool_t, queue) == 0U, "queue must be the first member of the pool");
+
 struct mg_message_t {
     struct mg_message_pool_t* parent;
     struct mg_list_t link;
@@ -178,7 +180,7 @@ void mg_actor_init(
     _mg_call(context, actor);
 }
 
-struct mg_message_t* mg_message_alloc(struct mg_message_pool_t* pool) {
+void* mg_message_alloc(struct mg_message_pool_t* pool) {
     struct mg_message_t* msg = 0;
 
     mg_queue_lock(q);

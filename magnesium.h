@@ -73,7 +73,7 @@ struct mg_context_t {
 extern struct mg_context_t g_mg_context;
 #define mg_get_context() (&g_mg_context)
 
-void mg_context_init(void) {
+static inline void mg_context_init(void) {
     struct mg_context_t* c = mg_get_context();
 
     c->active_actor = 0;
@@ -82,12 +82,12 @@ void mg_context_init(void) {
     }
 }
 
-void mg_queue_init(struct mg_queue_t* q) {
+static inline void mg_queue_init(struct mg_queue_t* q) {
     mg_list_init(&q->items);
     q->item_type_is_msg = true;
 }
 
-void mg_message_pool_init(struct mg_message_pool_t* pool, void* mem, size_t total_len, size_t block_sz) {
+static inline void mg_message_pool_init(struct mg_message_pool_t* pool, void* mem, size_t total_len, size_t block_sz) {
     assert(total_len >= block_sz);
     pool->array = mem;
     pool->total_length = total_len;
@@ -97,11 +97,11 @@ void mg_message_pool_init(struct mg_message_pool_t* pool, void* mem, size_t tota
     mg_queue_init(&pool->queue);
 }
 
-struct mg_actor_t* mg_actor_self(void) {
+static inline struct mg_actor_t* mg_actor_self(void) {
     return mg_get_context()->active_actor;
 }
 
-struct mg_message_t* mg_queue_pop(struct mg_queue_t* q, bool subscribe) {
+static inline struct mg_message_t* mg_queue_pop(struct mg_queue_t* q, bool subscribe) {
     struct mg_message_t* msg = 0;
 
     mg_queue_lock(q);
@@ -124,7 +124,7 @@ struct mg_message_t* mg_queue_pop(struct mg_queue_t* q, bool subscribe) {
     return msg;
 }
 
-void mg_queue_push(struct mg_queue_t* q, struct mg_message_t* msg) {
+static inline void mg_queue_push(struct mg_queue_t* q, struct mg_message_t* msg) {
     struct mg_actor_t* actor = 0;
 
     mg_queue_lock(q);
@@ -164,7 +164,7 @@ static inline void _mg_call(struct mg_context_t* context, struct mg_actor_t* act
     context->active_actor = prev;
 }
 
-void mg_actor_init(
+static inline void mg_actor_init(
     struct mg_actor_t* actor, 
     struct mg_queue_t* (*func)(struct mg_actor_t*, struct mg_message_t*), 
     unsigned int vect, 
@@ -180,7 +180,7 @@ void mg_actor_init(
     _mg_call(context, actor);
 }
 
-void* mg_message_alloc(struct mg_message_pool_t* pool) {
+static inline void* mg_message_alloc(struct mg_message_pool_t* pool) {
     struct mg_message_t* msg = 0;
 
     mg_queue_lock(q);
@@ -205,13 +205,13 @@ void* mg_message_alloc(struct mg_message_pool_t* pool) {
     return msg;
 }
 
-void mg_message_free(struct mg_message_t* msg) {
+static inline void mg_message_free(struct mg_message_t* msg) {
     struct mg_message_pool_t* const pool = msg->parent;
 
     mg_queue_push(&pool->queue, msg);
 }
 
-void mg_context_schedule(unsigned int vect) {
+static inline void mg_context_schedule(unsigned int vect) {
     struct mg_context_t* const context = mg_get_context();
     struct mg_list_t* const runq = &context->runq[pic_vect2prio(vect)];
 

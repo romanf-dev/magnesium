@@ -8,10 +8,10 @@ Theory of operation
 The framework relies on hardware features of an interrupt controller: its ability to set user-defined priorities to IRQs and possibility to trigger interrupts programmatically. Actor's priorities are mapped to interrupt vectors and interrupt controller acts as hardware scheduler.
 
 There are only three types of objects: actor, queue and message. 
-After initialization it is expected that all actors are subscribed to some queues. When some event (hardware interrupt) occurs, it allocates and post message to some queue, this causes activation of subscribed actor, moving the message into its incoming mailbox, moving actor to the list of ready ones and also triggering interrupt vector corresponding to actor's priority. After leaving this handler hardware automatically transfers control to our activated vector, its handler then calls framework's function 'schedule' which eventually calls activated actors which starts processing its message. 
+After initialization it is expected that all actors are subscribed to some queues. When some event (hardware interrupt) occurs, it allocates and post message to a queue, this causes activation of subscribed actor, moving the message into its incoming mailbox, moving actor to the list of ready ones and also triggering interrupt vector corresponding to actor's priority. After leaving this handler hardware automatically transfers control to the activated vector, its handler then calls framework's function 'schedule' which eventually calls activated actors. 
 
-During this process the system remains fully preemptable and asynchronous: another interrupts may post messages to other queues, if corresponding actors have less priority then messages will just being accumulated in queues. When some actor or interrupt activate another high-priority actor then preemption occurs immediately, so, this system has good responde times and less jitter than loop-based solutions.
-Normally actor model does not require explicit synchronization like semaphores and mutexes. For example, mutual exclusion may be represented as multiple actors posting their requests to single queue and one actor associated with that queue will do all the work sequentially. Nevertheless, in practice it is often desirable to block preemption. This may be done using hardware features or interrupt locking.
+During this process the system remains fully preemptable and asynchronous: another interrupts may post messages to other queues, if corresponding actors have less priority then messages will just being accumulated in queues. When some actor or interrupt activate another high-priority actor then preemption occurs immediately, so, this system has good response times and less jitter than loop-based solutions.
+Normally actor model does not require explicit synchronization like semaphores and mutexes. For example, mutual exclusion may be represented as multiple actors posting their requests to single queue and one actor associated with that queue will do all the work sequentially. Nevertheless, in practice it is often desirable to block preemption. This may be done using hardware priority management or interrupt locking.
 
 
 API description
@@ -47,7 +47,7 @@ Initialization of actor object. The actor will be called inside this function an
         void mg_actor_init(struct mg_actor_t* a, struct mg_queue_t* (*f)(struct mg_actor_t*, struct mg_message_t*), unsigned int vect, struct mg_message_t* m);
 
 
-Select next actor to run. Should be called insode vectors designated to actors.
+Select next actor to run. Should be called inside vectors designated to actors.
 
         void mg_context_schedule(unsigned int vect);
 
@@ -64,6 +64,7 @@ Sending message to queue:
 
 
 Warning! Actor is automatically subscribed to queue it returns, don't call mg_queue_pop manually!
+
 Warning! It is expected that interrupts are enabled on call of these functions.
 
 

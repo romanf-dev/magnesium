@@ -136,9 +136,7 @@ int main(void)
     //
     // Send first message to initialize actor.
     //
-    struct example_msg_t* m = mg_message_alloc(&g_pool);
-    m->led_state = 0;
-    mg_actor_init(&g_handler, &actor, EXAMPLE_VECTOR, &m->header);
+    mg_actor_init(&g_handler, &actor, EXAMPLE_VECTOR, &g_queue);
 
     //
     // Enable Systick to trigger interrupt every 100ms.

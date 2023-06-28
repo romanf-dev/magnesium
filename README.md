@@ -1,17 +1,15 @@
-Lightweight header-only preemptive multitasking framework implementing actor model
-==================================================================================
+Header-only preemptive multitasking framework implementing actor model
+======================================================================
 
 
-Theory of operation
--------------------
+Overview
+--------
 
-The framework relies on hardware features of an interrupt controller: its ability to set user-defined priorities to IRQs and possibility to trigger interrupts programmatically. Actor's priorities are mapped to interrupt vectors and interrupt controller acts as hardware scheduler.
+The framework relies on hardware features of the interrupt controller: its ability to set user-defined priorities to IRQs and possibility to trigger interrupts programmatically. Actor's priorities are mapped to interrupt vectors and interrupt controller acts as hardware scheduler.
 
-There are only three types of objects: actor, queue and message. 
-After initialization it is expected that all actors are subscribed to some queues. When some event (hardware interrupt) occurs, it allocates and post message to a queue, this causes activation of subscribed actor, moving the message into its incoming mailbox, moving actor to the list of ready ones and also triggering interrupt vector corresponding to actor's priority. After leaving this handler hardware automatically transfers control to the activated vector, its handler then calls framework's function 'schedule' which eventually calls activated actors. 
+There are only three types of objects: actor, queue and message.
 
-During this process the system remains fully preemptable and asynchronous: another interrupts may post messages to other queues, if corresponding actors have less priority then messages will just being accumulated in queues. When some actor or interrupt activate another high-priority actor then preemption occurs immediately, so, this system has good response times and less jitter than loop-based solutions.
-Normally actor model does not require explicit synchronization like semaphores and mutexes. For example, mutual exclusion may be represented as multiple actors posting their requests to single queue and one actor associated with that queue will do all the work sequentially. Nevertheless, in practice it is often desirable to block preemption. This may be done using hardware priority management or interrupt locking.
+After initialization it is expected that all actors are subscribed to some queues. When hardware interrupt occurs, it allocates and post message to a queue, this causes activation of a subscribed actor. 
 
 
 API description
@@ -38,16 +36,17 @@ Example:
             mg_message_t header; 
             unsigned int our_payload;
         } msgs[10];
+
         struct mg_message_pool_t pool;
         mg_message_pool_init(&pool, msgs, sizeof(msgs), sizeof(msgs[0]));
 
 
-Initialization of actor object. The actor will be called inside this function and the last argument is a message for that call.
+Initialization of actor object. The actor will be implicitly subscribed to the queue specified.
 
-        void mg_actor_init(struct mg_actor_t* a, struct mg_queue_t* (*f)(struct mg_actor_t*, struct mg_message_t*), unsigned int vect, struct mg_message_t* m);
+        void mg_actor_init(struct mg_actor_t* a, struct mg_queue_t* (*f)(struct mg_actor_t*, struct mg_message_t*), unsigned int vect, struct mg_queue_t* q);
 
 
-Select next actor to run. Should be called inside vectors designated to actors.
+Selects next actor to run. Should be called inside vectors designated to actors.
 
         void mg_context_schedule(unsigned int vect);
 
@@ -58,17 +57,15 @@ Message management:
         void mg_message_free(struct mg_message_t* msg);
 
 
-Sending message to queue:
+Sending message to the queue:
 
-        void mg_queue_push(struct mg_queue_t* q, struct mg_message_t* m);
-
-
-Warning! Actor is automatically subscribed to queue it returns, don't call mg_queue_pop manually!
-
-Warning! It is expected that interrupts are enabled on call of these functions.
+        void mg_queue_push(struct mg_queue_t* q, struct mg_message_t* msg);
 
 
-Tips & tricks: if message pool returned NULL it may be typecasted to queue. If an actor returns sucn a queue it will be activated when someone free message. This is a way to deal with limited memory pools.
+Warning! It is expected that interrupts are enabled when using these functions.
+
+
+Tips & tricks: if message pool returned NULL it may be typecasted to queue. If some actor returns pointer to such queue it will be activated when someone returns message to the pool. This is a way to deal with limited memory pools.
 
 
 How to use
@@ -93,5 +90,5 @@ Building:
 Why 'Magnesium'
 ---------------
 
-Because magnesium is the 'key component of strong lightweight metal alloys'. Also, magnesium is one of just seven 'simple' metals contaning only s- and p- electron orbitals.
+RTOS-less systems are often called 'bare-metal' and magnesium is the 'key component of strong lightweight metal alloys'. Also, magnesium is one of just seven 'simple' metals contaning only s- and p- electron orbitals.
 

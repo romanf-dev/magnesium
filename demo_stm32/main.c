@@ -33,7 +33,7 @@ void HardFault_Handler(void)
 }
 
 //
-// Library
+// Library dependency...
 //
 void __assert_func(const char *file, int line, const char *func, const char *expr)
 {
@@ -47,6 +47,7 @@ static struct example_msg_t {
     struct mg_message_t header;
     unsigned int led_state;
 } g_msgs[1];
+
 static struct mg_message_pool_t g_pool;
 static struct mg_queue_t g_queue;
 static struct mg_actor_t g_handler;
@@ -127,16 +128,20 @@ int main(void)
     // Enable 20th vector. Its priority is defaulted to 0 after MCU reset.
     // 
     NVIC_SetPriorityGrouping(3);
-    NVIC_EnableIRQ(EXAMPLE_VECTOR);
 
     mg_context_init();
     mg_message_pool_init(&g_pool, g_msgs, sizeof(g_msgs), sizeof(g_msgs[0]));
     mg_queue_init(&g_queue);
 
     //
-    // Send first message to initialize actor.
+    // Create actor.
     //
     mg_actor_init(&g_handler, &actor, EXAMPLE_VECTOR, &g_queue);
+
+    //
+    // Enable interrupt source.
+    //
+    NVIC_EnableIRQ(EXAMPLE_VECTOR);
 
     //
     // Enable Systick to trigger interrupt every 100ms.
@@ -145,9 +150,7 @@ int main(void)
     SysTick->VAL   = 0;
     SysTick->CTRL  = 7;
 
-    for (;;)
-    {
-    }
+    for (;;);
 
     return 0; /* make compiler happy. */
 }

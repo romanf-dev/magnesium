@@ -7,7 +7,6 @@
 #ifndef _MAGNESIUM_H_
 #define _MAGNESIUM_H_
 
-#include <stddef.h>
 #include <stdbool.h>
 #include <assert.h>
 #include "mg_port.h"
@@ -87,6 +86,7 @@ static inline void mg_queue_init(struct mg_queue_t* q) {
 
 static inline void mg_message_pool_init(struct mg_message_pool_t* pool, void* mem, size_t total_len, size_t block_sz) {
     assert(total_len >= block_sz);
+    assert(block_sz >= sizeof(struct mg_message_t));
     pool->array = mem;
     pool->total_length = total_len;
     pool->block_sz = block_sz;
@@ -125,7 +125,6 @@ static inline void mg_queue_push(struct mg_queue_t* q, struct mg_message_t* msg)
     } 
     else {
         struct mg_list_t* const head = mg_list_first(&q->items);
-
         mg_list_remove(head);
         actor = mg_list_entry(head, struct mg_actor_t, link);
         actor->mailbox = msg;
@@ -139,7 +138,6 @@ static inline void mg_queue_push(struct mg_queue_t* q, struct mg_message_t* msg)
 
     if (actor) {
         struct mg_context_t* const context = actor->parent;
-
         mg_context_lock(context);
         mg_list_append(&context->runq[actor->prio], &actor->link);
         pic_interrupt_request(actor->vect);
@@ -154,13 +152,13 @@ static inline void mg_actor_init(
     struct mg_queue_t* q) {
 
     struct mg_context_t* const context = mg_get_context();
-
     actor->func = func;
     actor->vect = vect;
     actor->prio = pic_vect2prio(vect);
     actor->parent = context;
-    actor->mailbox = NULL;
-    mg_queue_pop(q, actor);
+    actor->mailbox = 0;
+    const struct mg_message_t* const msg = mg_queue_pop(q, actor);
+    assert(msg == 0);
 }
 
 static inline void* mg_message_alloc(struct mg_message_pool_t* pool) {
@@ -190,7 +188,6 @@ static inline void* mg_message_alloc(struct mg_message_pool_t* pool) {
 
 static inline void mg_message_free(struct mg_message_t* msg) {
     struct mg_message_pool_t* const pool = msg->parent;
-
     mg_queue_push(&pool->queue, msg);
 }
 
@@ -203,7 +200,6 @@ static inline void mg_context_schedule(unsigned int vect) {
     while (!mg_list_empty(runq)) {
         struct mg_list_t* const head = mg_list_first(runq);
         struct mg_actor_t* const actor = mg_list_entry(head, struct mg_actor_t, link);
-
         mg_list_remove(head);
         mg_context_unlock(context);
 

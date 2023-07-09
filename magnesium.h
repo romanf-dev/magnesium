@@ -7,6 +7,7 @@
 #ifndef _MAGNESIUM_H_
 #define _MAGNESIUM_H_
 
+#include <stddef.h>
 #include <stdbool.h>
 #include <assert.h>
 #include "mg_port.h"
@@ -19,9 +20,13 @@ struct mg_list_t {
 #define mg_list_init(head) ((head)->next = (head)->prev = (head))
 #define mg_list_empty(head) ((head)->next == (head))
 #define mg_list_first(head) ((head)->next)
-#define mg_list_entry(p, type, member) ((type*)((char*)(p) - (size_t)(&((type*)0)->member)))
+#define mg_list_entry(p, type, member) \
+    ((type*)((char*)(p) - (size_t)(&((type*)0)->member)))
 
-static inline void mg_list_append(struct mg_list_t* head, struct mg_list_t* node) {
+static inline void mg_list_append(
+    struct mg_list_t* head, 
+    struct mg_list_t* node) {
+
     node->next = head;
     node->prev = head->prev;
     node->prev->next = node;
@@ -48,7 +53,10 @@ struct mg_message_pool_t {
     bool array_space_available;
 };
 
-_Static_assert(offsetof(struct mg_message_pool_t, queue) == 0U, "queue must be the first member of the pool");
+_Static_assert(
+    offsetof(struct mg_message_pool_t, queue) == 0U, 
+    "queue must be the first member of the pool"
+);
 
 struct mg_message_t {
     struct mg_message_pool_t* parent;
@@ -57,7 +65,7 @@ struct mg_message_t {
 
 struct mg_actor_t {
     struct mg_context_t* parent;
-    struct mg_queue_t* (*func)(struct mg_actor_t* self, struct mg_message_t* msg);
+    struct mg_queue_t* (*func)(struct mg_actor_t* self, struct mg_message_t* m);
     unsigned int vect;
     unsigned int prio;
     struct mg_message_t* mailbox;
@@ -72,10 +80,11 @@ extern struct mg_context_t g_mg_context;
 #define mg_get_context() (&g_mg_context)
 
 static inline void mg_context_init(void) {
-    struct mg_context_t* c = mg_get_context();
+    struct mg_context_t* context = mg_get_context();
+    const size_t runq_num = (sizeof(context->runq) / sizeof(context->runq[0])); 
 
-    for (size_t i = 0; i < (sizeof(c->runq) / sizeof(c->runq[0])); ++i) {
-        mg_list_init(&c->runq[i]);
+    for (size_t i = 0; i < runq_num; ++i) {
+        mg_list_init(&context->runq[i]);
     }
 }
 
@@ -84,20 +93,27 @@ static inline void mg_queue_init(struct mg_queue_t* q) {
     q->item_type_is_msg = true;
 }
 
-static inline void mg_message_pool_init(struct mg_message_pool_t* pool, void* mem, size_t total_len, size_t block_sz) {
+static inline void mg_message_pool_init(
+    struct mg_message_pool_t* pool, 
+    void* mem, 
+    size_t total_len, 
+    size_t block_sz) {
+
     assert(total_len >= block_sz);
     assert(block_sz >= sizeof(struct mg_message_t));
+    mg_queue_init(&pool->queue);
     pool->array = mem;
     pool->total_length = total_len;
     pool->block_sz = block_sz;
     pool->offset = 0;
     pool->array_space_available = true;
-    mg_queue_init(&pool->queue);
 }
 
-static inline struct mg_message_t* mg_queue_pop(struct mg_queue_t* q, struct mg_actor_t* subscriber) {
-    struct mg_message_t* msg = 0;
+static inline struct mg_message_t* mg_queue_pop(
+    struct mg_queue_t* q, 
+    struct mg_actor_t* subscriber) {
 
+    struct mg_message_t* msg = 0;
     mg_queue_lock(q);
 
     if (!mg_list_empty(&q->items) && q->item_type_is_msg) {
@@ -115,9 +131,11 @@ static inline struct mg_message_t* mg_queue_pop(struct mg_queue_t* q, struct mg_
     return msg;
 }
 
-static inline void mg_queue_push(struct mg_queue_t* q, struct mg_message_t* msg) {
-    struct mg_actor_t* actor = 0;
+static inline void mg_queue_push(
+    struct mg_queue_t* q, 
+    struct mg_message_t* msg) {
 
+    struct mg_actor_t* actor = 0;
     mg_queue_lock(q);
 
     if (q->item_type_is_msg) {
@@ -152,9 +170,11 @@ static inline void mg_actor_init(
     struct mg_queue_t* q) {
 
     struct mg_context_t* const context = mg_get_context();
+    const unsigned int prio = pic_vect2prio(vect);
+    assert(prio < MG_PRIO_MAX);
     actor->func = func;
     actor->vect = vect;
-    actor->prio = pic_vect2prio(vect);
+    actor->prio = prio;
     actor->parent = context;
     actor->mailbox = 0;
     const struct mg_message_t* const msg = mg_queue_pop(q, actor);
@@ -163,7 +183,6 @@ static inline void mg_actor_init(
 
 static inline void* mg_message_alloc(struct mg_message_pool_t* pool) {
     struct mg_message_t* msg = 0;
-
     mg_queue_lock(q);
 
     if (pool->array_space_available) {
@@ -193,19 +212,26 @@ static inline void mg_message_free(struct mg_message_t* msg) {
 
 static inline void mg_context_schedule(unsigned int vect) {
     struct mg_context_t* const context = mg_get_context();
-    struct mg_list_t* const runq = &context->runq[pic_vect2prio(vect)];
-
+    const unsigned int prio = pic_vect2prio(vect);
+    assert(prio < MG_PRIO_MAX);
+    struct mg_list_t* const runq = &context->runq[prio];
     mg_context_lock(context);
 
     while (!mg_list_empty(runq)) {
         struct mg_list_t* const head = mg_list_first(runq);
-        struct mg_actor_t* const actor = mg_list_entry(head, struct mg_actor_t, link);
+        struct mg_actor_t* const actor = mg_list_entry(
+            head, 
+            struct mg_actor_t, 
+            link
+        );
         mg_list_remove(head);
         mg_context_unlock(context);
 
-        while ((actor->mailbox = mg_queue_pop(actor->func(actor, actor->mailbox), actor)) != 0) {
-            ;
-        }
+        do {
+            struct mg_queue_t* const q = actor->func(actor, actor->mailbox);
+            assert(q != 0);
+            actor->mailbox = mg_queue_pop(q, actor);
+        } while (actor->mailbox != 0);
 
         mg_context_lock(context);
     }

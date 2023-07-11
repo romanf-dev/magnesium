@@ -199,7 +199,7 @@ static inline void* mg_message_alloc(struct mg_message_pool_t* pool) {
     mg_queue_unlock(q);
 
     if (!msg) {
-        msg = mg_queue_pop(&pool->queue, false);
+        msg = mg_queue_pop(&pool->queue, 0);
     }  
 
     return msg;

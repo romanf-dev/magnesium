@@ -236,5 +236,9 @@ static inline void mg_context_schedule(unsigned int vect) {
     mg_context_unlock(context);
 }
 
+#define MG_ACTOR_START static int mg_state = 0; switch(mg_state) { case 0:
+#define MG_ACTOR_END } return NULL
+#define MG_AWAIT(queue) mg_state = __LINE__; return (&(queue)); case __LINE__: 
+
 #endif
 

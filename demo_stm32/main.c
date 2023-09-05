@@ -45,7 +45,6 @@ void __assert_func(const char *file, int line, const char *func, const char *exp
 //
 static struct example_msg_t {
     struct mg_message_t header;
-    unsigned int led_state;
 } g_msgs[1];
 
 static struct mg_message_pool_t g_pool;
@@ -68,13 +67,12 @@ void USB_LP_CAN1_RX0_IRQHandler(void)
 //
 void SysTick_Handler(void)
 {
-    static unsigned int led_state = 0;
-
-    led_state ^= 1;
-
     struct example_msg_t* m = mg_message_alloc(&g_pool);
-    m->led_state = led_state;
-    mg_queue_push(&g_queue, &m->header);
+
+    if (m) 
+    {
+        mg_queue_push(&g_queue, &m->header);
+    }
 }
 
 //
@@ -82,15 +80,22 @@ void SysTick_Handler(void)
 //
 static struct mg_queue_t* actor(struct mg_actor_t* self, struct mg_message_t* m)
 {
-    const struct example_msg_t* msg = (struct example_msg_t*) m;
-
-    if (msg->led_state == 0)
+    MG_ACTOR_START;
+    
+    for (;;)
+    {      
         GPIOC->BSRR = GPIO_BSRR_BR13;
-    else
-        GPIOC->BSRR = GPIO_BSRR_BS13;
+        mg_message_free(m);
 
-    mg_message_free(m);
-    return &g_queue;
+        MG_AWAIT(g_queue);
+
+        GPIOC->BSRR = GPIO_BSRR_BS13;
+        mg_message_free(m);
+
+        MG_AWAIT(g_queue);
+    }
+
+    MG_ACTOR_END;
 }
 
 //

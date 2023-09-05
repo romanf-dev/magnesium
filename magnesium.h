@@ -41,7 +41,7 @@ static inline void mg_list_remove(struct mg_list_t* node) {
 
 struct mg_queue_t {
     struct mg_list_t items;
-    bool item_type_is_msg;
+    int length; /* Positive length - messages, negative - actors */
 };
 
 struct mg_message_pool_t {
@@ -90,7 +90,7 @@ static inline void mg_context_init(void) {
 
 static inline void mg_queue_init(struct mg_queue_t* q) {
     mg_list_init(&q->items);
-    q->item_type_is_msg = true;
+    q->length = 0;
 }
 
 static inline void mg_message_pool_init(
@@ -116,16 +116,16 @@ static inline struct mg_message_t* mg_queue_pop(
     struct mg_message_t* msg = 0;
     mg_queue_lock(q);
 
-    if (!mg_list_empty(&q->items) && q->item_type_is_msg) {
+    if (q->length > 0) {
         struct mg_list_t* const head = mg_list_first(&q->items);
         mg_list_remove(head);
         msg = mg_list_entry(head, struct mg_message_t, link);
     } 
     else if (subscriber != 0) {
         mg_list_append(&q->items, &subscriber->link);
-        q->item_type_is_msg = false;
     }
 
+    --q->length;
     mg_queue_unlock(q);
 
     return msg;
@@ -138,7 +138,7 @@ static inline void mg_queue_push(
     struct mg_actor_t* actor = 0;
     mg_queue_lock(q);
 
-    if (q->item_type_is_msg) {
+    if (q->length >= 0) {
         mg_list_append(&q->items, &msg->link);
     } 
     else {
@@ -146,12 +146,9 @@ static inline void mg_queue_push(
         mg_list_remove(head);
         actor = mg_list_entry(head, struct mg_actor_t, link);
         actor->mailbox = msg;
-
-        if (mg_list_empty(&q->items)) {
-            q->item_type_is_msg = true;
-        }
     }
 
+    ++q->length;
     mg_queue_unlock(q);
 
     if (actor) {

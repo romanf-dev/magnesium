@@ -63,7 +63,7 @@ void USB_LP_CAN1_RX0_IRQHandler(void)
 }
 
 //
-// Systick sends new LED state to queue at every tick.
+// Systick sends notification to queue at every tick.
 //
 void SysTick_Handler(void)
 {
@@ -76,7 +76,7 @@ void SysTick_Handler(void)
 }
 
 //
-// Actor reads new LED state from the message and program GPIO.
+// Actor switches LED state once new message arrives.
 //
 static struct mg_queue_t* actor(struct mg_actor_t* self, struct mg_message_t* m)
 {

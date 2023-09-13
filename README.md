@@ -5,14 +5,11 @@ Header-only preemptive multitasking framework implementing actor model
 Overview
 --------
 
-The framework relies on hardware features of an interrupt controller: its ability to set user-defined priorities to IRQs and possibility to trigger interrupts programmatically. Actor's priorities are mapped to interrupt vectors and interrupt controller acts as a hardware scheduler.
+The framework relies on hardware features of the interrupt controller: the ability to set user-defined priorities to IRQs and possibility to trigger interrupts programmatically. Actor's priorities are mapped to interrupt vectors and interrupt controller acts as a hardware scheduler. Therefore, interrupts are used as 'execution engine' for actors with certain priority.
 
-There are only three types of objects: actor, queue and message. 
-After initialization it is expected that all actors are subscribed to some queues. When some event (hardware interrupt) occurs, it allocates and posts the message to the queue, this causes activation of the subscribed actor, moving the message into its incoming mailbox, moving the actor to the list of ready ones and also triggering interrupt vector corresponding to actor's priority. Hardware automatically transfers control to the activated vector, its handler then calls framework's function 'schedule' which eventually calls activated actors.
+There are only three types of objects: actor, queue and message.
 
-During this process the system remains fully preemptable and asynchronous: another interrupts may post messages to other queues, if corresponding actors have less priority then messages will just be accumulated in queues. When some actor or interrupt activates another high-priority actor then preemption occurs immediately, so, this system has good response times and less jitter than loop-based solutions.
-
-Normally actor model does not require explicit synchronization like semaphores and mutexes. For example, mutual exclusion may be represented as multiple actors posting their requests to single queue and one actor associated with that queue will do all the work sequentially. Nevertheless, in practice it is often desirable to block preemption. This may be done using hardware priority management or interrupt locking.
+When some event (hardware interrupt) occurs, it allocates and posts the message to a queue, this causes activation of the subscribed actor, moving the message into its incoming mailbox, moving the actor to the list of ready ones and also triggering interrupt vector corresponding to actor's priority. Hardware automatically transfers control to the activated vector, its handler then calls framework's function 'schedule' which eventually calls activated actors.
 
 
 API description

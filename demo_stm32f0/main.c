@@ -99,13 +99,22 @@ static struct mg_queue_t* actor(struct mg_actor_t* self, struct mg_message_t* m)
 //
 int main(void)
 {
+    //
+    // Enable HSE and wait until it is ready.
+    //
     RCC->CR |= RCC_CR_HSEON;
 
     while(!(RCC->CR & RCC_CR_HSERDY)) {
     }
     
+    //
+    // Setup flash prefetch.
+    //
     FLASH->ACR = FLASH_ACR_PRFTBE | FLASH_ACR_LATENCY;
 
+    //
+    // Set PLL multiplier to 6, set HSE as PLL source and enable the PLL.
+    //
     RCC->CFGR |= RCC_CFGR_PLLMUL6;
     RCC->CFGR |= RCC_CFGR_PLLSRC_1;
     RCC->CR |= RCC_CR_PLLON;
@@ -113,10 +122,17 @@ int main(void)
     while(!(RCC->CR & RCC_CR_PLLRDY)) {
     }
     
+    //
+    // Switch to PLL and wait until switch succeeds.
+    //
     RCC->CFGR = (RCC->CFGR & ~RCC_CFGR_SW) | RCC_CFGR_SW_PLL;
-    while(!(RCC->CFGR & RCC_CFGR_SWS_PLL))
-        ;
 
+    while(!(RCC->CFGR & RCC_CFGR_SWS_PLL)) {
+    }
+
+    //
+    // Disable HSI.
+    //
     RCC->CR &= ~RCC_CR_HSION;
 
     //

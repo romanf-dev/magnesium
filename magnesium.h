@@ -23,9 +23,8 @@ struct mg_list_t {
 #define mg_list_entry(p, type, member) \
     ((type*)((char*)(p) - (size_t)(&((type*)0)->member)))
 
-static inline void mg_list_append(
-    struct mg_list_t* head, 
-    struct mg_list_t* node) {
+static inline void 
+mg_list_append(struct mg_list_t* head, struct mg_list_t* node) {
 
     node->next = head;
     node->prev = head->prev;
@@ -114,7 +113,7 @@ static inline struct mg_message_t* mg_queue_pop(
     struct mg_actor_t* subscriber) {
 
     struct mg_message_t* msg = 0;
-    mg_queue_lock(q);
+    mg_critical_section_enter();
 
     if (q->length > 0) {
         struct mg_list_t* const head = mg_list_first(&q->items);
@@ -126,7 +125,7 @@ static inline struct mg_message_t* mg_queue_pop(
     }
 
     --q->length;
-    mg_queue_unlock(q);
+    mg_critical_section_leave();
 
     return msg;
 }
@@ -136,7 +135,7 @@ static inline void mg_queue_push(
     struct mg_message_t* msg) {
 
     struct mg_actor_t* actor = 0;
-    mg_queue_lock(q);
+    mg_critical_section_enter();
 
     if (q->length >= 0) {
         mg_list_append(&q->items, &msg->link);
@@ -149,15 +148,14 @@ static inline void mg_queue_push(
     }
 
     ++q->length;
-    mg_queue_unlock(q);
 
     if (actor) {
         struct mg_context_t* const context = actor->parent;
-        mg_context_lock(context);
         mg_list_append(&context->runq[actor->prio], &actor->link);
         pic_interrupt_request(actor->vect);
-        mg_context_unlock(context);
     }
+
+    mg_critical_section_leave();
 }
 
 static inline void mg_actor_init(
@@ -180,7 +178,7 @@ static inline void mg_actor_init(
 
 static inline void* mg_message_alloc(struct mg_message_pool_t* pool) {
     struct mg_message_t* msg = 0;
-    mg_queue_lock(q);
+    mg_critical_section_enter();
 
     if (pool->array_space_available) {
         msg = (void*)(pool->array + pool->offset);
@@ -193,7 +191,7 @@ static inline void* mg_message_alloc(struct mg_message_pool_t* pool) {
         msg->parent = pool;
     }
 
-    mg_queue_unlock(q);
+    mg_critical_section_leave();
 
     if (!msg) {
         msg = mg_queue_pop(&pool->queue, 0);
@@ -212,7 +210,7 @@ static inline void mg_context_schedule(unsigned int vect) {
     const unsigned int prio = pic_vect2prio(vect);
     assert(prio < MG_PRIO_MAX);
     struct mg_list_t* const runq = &context->runq[prio];
-    mg_context_lock(context);
+    mg_critical_section_enter();
 
     while (!mg_list_empty(runq)) {
         struct mg_list_t* const head = mg_list_first(runq);
@@ -222,7 +220,7 @@ static inline void mg_context_schedule(unsigned int vect) {
             link
         );
         mg_list_remove(head);
-        mg_context_unlock(context);
+        mg_critical_section_leave();
 
         do {
             struct mg_queue_t* const q = actor->func(actor, actor->mailbox);
@@ -230,10 +228,10 @@ static inline void mg_context_schedule(unsigned int vect) {
             actor->mailbox = mg_queue_pop(q, actor);
         } while (actor->mailbox != 0);
 
-        mg_context_lock(context);
+        mg_critical_section_enter();
     }
 
-    mg_context_unlock(context);
+    mg_critical_section_leave();
 }
 
 #define MG_ACTOR_START static int mg_state = 0; switch(mg_state) { case 0:

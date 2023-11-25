@@ -24,8 +24,8 @@
 #define pic_vect2prio(v) \
     ((((volatile unsigned char*)0xE000E400)[v]) >> (8 - MG_NVIC_PRIO_BITS))
 
-#define STIR_ADDR ((volatile unsigned int*) 0xE000EF00)
-#define pic_interrupt_request(v) ((*STIR_ADDR) = v)
+#define ISPR_ADDR ((volatile unsigned int*) 0xE000E200)
+#define pic_interrupt_request(v) ((*ISPR_ADDR) = 1U << (v))
 
 #endif
 

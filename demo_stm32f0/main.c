@@ -12,10 +12,9 @@
 #include "magnesium.h"
 
 //
-// Errors and exceptions turn onboard LED on.
+// Errors and exceptions are mapped to infinite loop.
 //
-static noreturn void Error_Handler(void)
-{
+static noreturn void Error_Handler(void) {
     __disable_irq();
     for(;;);
 }
@@ -23,16 +22,14 @@ static noreturn void Error_Handler(void)
 //
 // Override hardware exceptions.
 //
-void HardFault_Handler(void)
-{
+void HardFault_Handler(void) {
     Error_Handler();
 }
 
 //
 // Library dependency...
 //
-void __assert_func(const char *file, int line, const char *func, const char *expr)
-{
+void __assert_func(const char *file, int line, const char *func, const char *expr) {
     Error_Handler();
 }
 
@@ -45,50 +42,56 @@ static struct example_msg_t {
 
 static struct mg_message_pool_t g_pool;
 static struct mg_queue_t g_queue;
-static struct mg_actor_t g_handler;
 
 struct mg_context_t g_mg_context;
 
 //
-// This is name for 0th IRQ which we use for actor execution. 
+// This is the name for 0th IRQ which we use for actor execution. 
 // Any unused vector may be used.
 //
-void WWDG_IRQHandler(void)
-{
+void WWDG_IRQHandler(void) {
     mg_context_schedule(0);
 }
 
 //
-// Systick sends notification to queue at every tick.
+// Systick is used to supply internal timers.
 //
-void SysTick_Handler(void)
-{
-    struct example_msg_t* m = mg_message_alloc(&g_pool);
+void SysTick_Handler(void) {
+    mg_context_tick();
+}
 
-    if (m) 
-    {
-        mg_queue_push(&g_queue, &m->header);
+//
+// Actor sends messages to another actor.
+//
+static struct mg_queue_t* sender(struct mg_actor_t* self, struct mg_message_t* m) {
+    MG_ACTOR_START;
+    
+    for (;;) {      
+        MG_AWAIT(mg_sleep_for(50, self));
+        struct example_msg_t* msg = mg_message_alloc(&g_pool);
+
+        if (msg) {
+            mg_queue_push(&g_queue, &msg->header);
+        }
     }
+
+    MG_ACTOR_END;
 }
 
 //
 // Actor switches LED state once new message arrives.
 //
-static struct mg_queue_t* actor(struct mg_actor_t* self, struct mg_message_t* m)
-{
+static struct mg_queue_t* receiver(struct mg_actor_t* self, struct mg_message_t* m) {
     MG_ACTOR_START;
     
-    for (;;)
-    {      
+    for (;;) {
+        MG_AWAIT(&g_queue);     
         GPIOA->BSRR = GPIO_BSRR_BS_4;
         mg_message_free(m);
 
-        MG_AWAIT(g_queue);
-
+        MG_AWAIT(&g_queue);
         GPIOA->BSRR = GPIO_BSRR_BR_4;
         mg_message_free(m);
-
-        MG_AWAIT(g_queue);
     }
 
     MG_ACTOR_END;
@@ -97,8 +100,7 @@ static struct mg_queue_t* actor(struct mg_actor_t* self, struct mg_message_t* m)
 //
 // Entry point...
 //
-int main(void)
-{
+int main(void) {
     //
     // Enable HSE and wait until it is ready.
     //
@@ -146,9 +148,16 @@ int main(void)
     mg_queue_init(&g_queue);
 
     //
-    // Create actor.
+    // Create sender actor. It sends message every 50ms to the receiver.
     //
-    mg_actor_init(&g_handler, &actor, 0, &g_queue);
+    static struct mg_actor_t actor_sender;
+    mg_actor_init(&actor_sender, &sender, 0, 0);
+
+    //
+    // Receiver. It blinks the LED.
+    //
+    static struct mg_actor_t actor_receiver;
+    mg_actor_init(&actor_receiver, &receiver, 0, 0);
 
     //
     // Enable interrupt source.
@@ -159,7 +168,7 @@ int main(void)
     //
     // Enable Systick to trigger interrupt every 100ms.
     //
-    SysTick->LOAD  = 48000U * 100 - 1U;
+    SysTick->LOAD  = 48000U - 1;
     SysTick->VAL   = 0;
     SysTick->CTRL  = 7;
 

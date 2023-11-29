@@ -9,7 +9,7 @@ OBJS = $(patsubst %.c,%.o,$(SRCS))
 GCC_PREFIX ?= arm-none-eabi-
 
 %.o : %.c
-	$(GCC_PREFIX)gcc -pedantic -ffreestanding -ffunction-sections -mcpu=cortex-m0 -DSTM32F030 -Wall -O2 -mthumb -DMG_PRIO_MAX=4 -DMG_NVIC_PRIO_BITS=2 -I $(MG_DIR) -I $(MG_DIR)/nvic_m0 -I . -c -o $@ $<
+	$(GCC_PREFIX)gcc -pedantic -ffreestanding -ffunction-sections -mcpu=cortex-m0 -DSTM32F030 -Wall -O2 -mthumb -DMG_NVIC_PRIO_BITS=2 -I $(MG_DIR) -I $(MG_DIR)/nvic_m0 -I . -c -o $@ $<
 
 %.o : %.s
 	$(GCC_PREFIX)gcc -mcpu=cortex-m0 -mthumb -c -o $@ $<

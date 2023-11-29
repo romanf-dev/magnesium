@@ -17,8 +17,7 @@
 //
 // Errors and exceptions turn onboard LED on.
 //
-static noreturn void Error_Handler(void)
-{
+static noreturn void Error_Handler(void) {
     __disable_irq();
     GPIOC->BSRR = GPIO_BSRR_BR13;
     for(;;);
@@ -27,16 +26,14 @@ static noreturn void Error_Handler(void)
 //
 // Override hardware exceptions.
 //
-void HardFault_Handler(void)
-{
+void HardFault_Handler(void) {
     Error_Handler();
 }
 
 //
 // Library dependency...
 //
-void __assert_func(const char *file, int line, const char *func, const char *expr)
-{
+void __assert_func(const char *file, int line, const char *func, const char *expr) {
     Error_Handler();
 }
 
@@ -57,20 +54,17 @@ struct mg_context_t g_mg_context;
 // This is name for 20th IRQ which we use for actor execution. 
 // Any unused vector may be used.
 //
-void USB_LP_CAN1_RX0_IRQHandler(void)
-{
+void USB_LP_CAN1_RX0_IRQHandler(void) {
     mg_context_schedule(EXAMPLE_VECTOR);
 }
 
 //
 // Systick sends notification to queue at every tick.
 //
-void SysTick_Handler(void)
-{
+void SysTick_Handler(void) {
     struct example_msg_t* m = mg_message_alloc(&g_pool);
 
-    if (m) 
-    {
+    if (m) {
         mg_queue_push(&g_queue, &m->header);
     }
 }
@@ -78,21 +72,19 @@ void SysTick_Handler(void)
 //
 // Actor switches LED state once new message arrives.
 //
-static struct mg_queue_t* actor(struct mg_actor_t* self, struct mg_message_t* m)
-{
+static struct mg_queue_t* actor(struct mg_actor_t* self, struct mg_message_t* m) {
     MG_ACTOR_START;
     
-    for (;;)
-    {      
+    for (;;) {      
         GPIOC->BSRR = GPIO_BSRR_BR13;
         mg_message_free(m);
 
-        MG_AWAIT(g_queue);
+        MG_AWAIT(&g_queue);
 
         GPIOC->BSRR = GPIO_BSRR_BS13;
         mg_message_free(m);
 
-        MG_AWAIT(g_queue);
+        MG_AWAIT(&g_queue);
     }
 
     MG_ACTOR_END;
@@ -101,8 +93,7 @@ static struct mg_queue_t* actor(struct mg_actor_t* self, struct mg_message_t* m)
 //
 // Entry point...
 //
-int main(void)
-{
+int main(void) {
     RCC->CR |= RCC_CR_HSEON;            
     while(!(RCC->CR & RCC_CR_HSERDY))
         ;

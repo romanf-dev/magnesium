@@ -46,7 +46,8 @@ Example:
         mg_message_pool_init(&pool, msgs, sizeof(msgs), sizeof(msgs[0]));
 
 
-Actor object initialization. The actor will be implicitly subscribed to the queue specified. Function 'func' will be called as a message handler.
+Actor object initialization. The actor will be implicitly subscribed to the queue specified. Function 'func' will be bound to the actor.
+If q == NULL then actor's function will be called inside init to obtain queue pointer. The rule of thumb is that if you want your actor to be always called with a valid message pointer including the first call then use 'subscription on init'. Otherwise, if you prefer async-style coding with internal explicit or implicit (MG_AWAIT) state machine then use NULL here, the actor will be called on init with no message to init the state machine.
 
         void mg_actor_init(
             struct mg_actor_t* actor, 
@@ -66,6 +67,25 @@ Sending message to queue:
         void mg_queue_push(struct mg_queue_t* q, struct mg_message_t* msg);
 
 
+If your system has the tick source you can also use timing facility. Raw low-level API works as follows:
+
+        self->timeout = <delay in ticks>;
+        return MG_ACTOR_SUSPEND;
+
+
+The calling actor will be activated with zero-message when the timeout is reached. The more convenient way to use timers
+is async/await-like approach:
+
+        MG_AWAIT(mg_sleep_for(10, self));
+
+
+This will suspend the calling actor for 10 ticks. AWAIT-style API may be used with any queue with the same effect. 
+Internal implementation is based on C-coroutines utilizing implicit state machine similar to Duff's device.
+Also, don't forget to call tick function in your timer's interrupt handler:
+
+        mg_context_tick();
+
+
 **Warning! Actor is automatically subscribed to queue it returns, don't call mg_queue_pop manually!**
 
 **Warning! It is expected that interrupts are enabled on call of these functions.**
@@ -83,14 +103,15 @@ How to use
 4. Initialize interrupt controller registers and priorities.
 5. Initialize context, message pools, queues and objects in your main(). Enable the corresponding interrupt sources.
 6. Put calls to 'schedule' in interrupt handlers associated with actors.
-7. Put calls to alloc/push in interrupt handlers associated with devices.
-8. Implement message handling code in actor's functions.
+7. Put calls to 'tick' in interrupt handler of tick source.
+8. Put calls to alloc/push in interrupt handlers associated with devices.
+9. Implement message handling code in actor's functions.
 
 
 Demo
 ----
 
-The demo is a toy example with just one actor which blinks the LED on the STM32 Bluepill board.
+The demo is a toy example with just one actor which blinks the LED.
 Building:
 
         make MG_DIR=..

@@ -10,13 +10,29 @@
 #error This header is intended to be used in GNU GCC only because of non-portable asm functions. 
 #endif
 
-#if !defined MG_PRIO_MAX
-#error Define MG_PRIO_MAX as maximum number of supported priorities.
-#endif 
-
 #if !defined MG_NVIC_PRIO_BITS
 #error Define MG_NVIC_PRIO_BITS as maximum number of supported preemption priorities for the target chip.
 #endif
+
+#if !defined MG_PRIO_MAX
+#define MG_PRIO_MAX (1U << MG_NVIC_PRIO_BITS)
+#endif 
+
+#if !defined MG_TIMERQ_MAX
+#define MG_TIMERQ_MAX 10
+#endif
+
+static inline unsigned int mg_port_clz(uint32_t x) {
+    unsigned int i = 0;
+
+    for (; i < 32; ++i) {
+        if (x & (1U << (31 - i))) {
+            break;
+        }
+    }
+    
+    return i;
+}
 
 #define mg_critical_section_enter() { asm volatile ("cpsid i"); }
 #define mg_critical_section_leave() { asm volatile ("cpsie i"); }

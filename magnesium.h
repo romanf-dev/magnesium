@@ -75,7 +75,6 @@ struct mg_context_t {
     struct mg_list_t runq[MG_PRIO_MAX];
     struct mg_list_t timerq[MG_TIMERQ_MAX];
     uint32_t ticks;
-    uint32_t gray_ticks;
 };
 
 extern struct mg_context_t g_mg_context;
@@ -86,7 +85,7 @@ static inline void mg_context_init(void) {
     struct mg_context_t* self = MG_GLOBAL_CONTEXT();
     const size_t nqueues = sizeof(self->runq) / sizeof(self->runq[0]);
     const size_t nbuckets = sizeof(self->timerq) / sizeof(self->timerq[0]);
-    self->ticks = self->gray_ticks = 0;
+    self->ticks = 0;
     
     for (size_t i = 0; i < nbuckets; ++i) {
         mg_list_init(&self->timerq[i]);
@@ -194,10 +193,6 @@ static inline void mg_message_free(struct mg_message_t* msg) {
     mg_queue_push(&pool->queue, msg);
 }
 
-static inline uint32_t mg_gray_code(uint32_t x) {
-    return x ^ (x >> 1);
-}
-
 static inline unsigned mg_diff_msb(uint32_t x, uint32_t y) {
     assert(x != y);
     const unsigned width = sizeof(uint32_t) * CHAR_BIT;
@@ -208,9 +203,8 @@ static inline unsigned mg_diff_msb(uint32_t x, uint32_t y) {
 static inline void mg_context_tick() {
     struct mg_context_t* const context  = MG_GLOBAL_CONTEXT();
     mg_critical_section_enter();
-    const uint32_t gray_ticks = mg_gray_code(++context->ticks);
-    const unsigned i = mg_diff_msb(context->gray_ticks, gray_ticks);
-    context->gray_ticks = gray_ticks;
+    const uint32_t oldticks = context->ticks++;
+    const unsigned i = mg_diff_msb(oldticks, context->ticks);
     struct mg_list_t* const last = mg_list_last(&context->timerq[i]);
 
     while (!mg_list_empty(&context->timerq[i])) {
@@ -218,20 +212,20 @@ static inline void mg_context_tick() {
         mg_list_unlink(head);
         struct mg_actor_t* const actor = mg_list_entry(head, struct mg_actor_t, link);
 
-        if (actor->timeout == gray_ticks) {
+        if (actor->timeout == context->ticks) {
             actor->timeout = 0;
             _mg_actor_activate(actor);
         } else {
-            const unsigned j = mg_diff_msb(actor->timeout, gray_ticks);
+            const unsigned j = mg_diff_msb(actor->timeout, context->ticks);
             mg_list_append(&context->timerq[j], &actor->link);
         }
-
-        mg_critical_section_leave(); /* Interrupt window . */
-        mg_critical_section_enter();
 
         if (head == last) {
             break;
         }
+
+        mg_critical_section_leave(); /* Interrupt window . */
+        mg_critical_section_enter();
     }
 
     mg_critical_section_leave();
@@ -243,10 +237,8 @@ static inline void mg_actor_timeout(
 ) {
     assert((actor->timeout != 0) && (actor->timeout < INT32_MAX));
     mg_critical_section_enter();
-    const uint32_t tout = context->ticks + actor->timeout;
-    const uint32_t gray_tout = mg_gray_code(tout);
-    const unsigned i = mg_diff_msb(context->gray_ticks, gray_tout);
-    actor->timeout = gray_tout;
+    actor->timeout += context->ticks;
+    const unsigned i = mg_diff_msb(context->ticks, actor->timeout);
     mg_list_append(&context->timerq[i], &actor->link);
     mg_critical_section_leave();
 }

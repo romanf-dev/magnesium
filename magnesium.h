@@ -172,7 +172,7 @@ static inline void* mg_message_alloc(struct mg_message_pool_t* pool) {
         msg = (void*)(pool->array + pool->offset);
         pool->offset += pool->block_sz;
 
-        if ((pool->offset + pool->block_sz) >= pool->total_length) {
+        if ((pool->offset + pool->block_sz) > pool->total_length) {
             pool->array_space_available = false;
         }
 
@@ -193,7 +193,7 @@ static inline void mg_message_free(struct mg_message_t* msg) {
     mg_queue_push(&pool->queue, msg);
 }
 
-static inline unsigned mg_diff_msb(uint32_t x, uint32_t y) {
+static inline unsigned _mg_diff_msb(uint32_t x, uint32_t y) {
     assert(x != y);
     const unsigned width = sizeof(uint32_t) * CHAR_BIT;
     const unsigned msb = width - mg_port_clz(x ^ y) - 1;
@@ -204,7 +204,7 @@ static inline void mg_context_tick() {
     struct mg_context_t* const context  = MG_GLOBAL_CONTEXT();
     mg_critical_section_enter();
     const uint32_t oldticks = context->ticks++;
-    const unsigned i = mg_diff_msb(oldticks, context->ticks);
+    const unsigned i = _mg_diff_msb(oldticks, context->ticks);
     struct mg_list_t* const last = mg_list_last(&context->timerq[i]);
 
     while (!mg_list_empty(&context->timerq[i])) {
@@ -216,7 +216,7 @@ static inline void mg_context_tick() {
             actor->timeout = 0;
             _mg_actor_activate(actor);
         } else {
-            const unsigned j = mg_diff_msb(actor->timeout, context->ticks);
+            const unsigned j = _mg_diff_msb(actor->timeout, context->ticks);
             mg_list_append(&context->timerq[j], &actor->link);
         }
 
@@ -231,14 +231,14 @@ static inline void mg_context_tick() {
     mg_critical_section_leave();
 }
 
-static inline void mg_actor_timeout(
+static inline void _mg_actor_timeout(
     struct mg_context_t* context,
     struct mg_actor_t* actor
 ) {
     assert((actor->timeout != 0) && (actor->timeout < INT32_MAX));
     mg_critical_section_enter();
     actor->timeout += context->ticks;
-    const unsigned i = mg_diff_msb(context->ticks, actor->timeout);
+    const unsigned i = _mg_diff_msb(context->ticks, actor->timeout);
     mg_list_append(&context->timerq[i], &actor->link);
     mg_critical_section_leave();
 }
@@ -252,7 +252,7 @@ static inline void mg_actor_call(struct mg_actor_t* actor) {
             actor->mailbox = 0;
 
             if (actor->timeout) {
-                mg_actor_timeout(actor->parent, actor);
+                _mg_actor_timeout(actor->parent, actor);
                 break;
             } else {                    
                 continue; /* Zero timeout, just call the actor again. */
@@ -282,7 +282,7 @@ static inline void mg_actor_init(
     if (q) {
         struct mg_message_t* msg = mg_queue_pop(q, actor);
         assert(msg == 0);
-    } else {
+    } else if (func) {
         mg_actor_call(actor);
     }
 }
@@ -295,23 +295,33 @@ static inline struct mg_queue_t* mg_sleep_for(
     return MG_ACTOR_SUSPEND;
 }
 
-static inline void mg_context_schedule(unsigned int vect) {
+static inline struct mg_actor_t* _mg_context_pop_head(unsigned int vect, bool* last) {
     struct mg_context_t* const context = MG_GLOBAL_CONTEXT();
     const unsigned int prio = pic_vect2prio(vect);
     assert(prio < MG_PRIO_MAX);
     struct mg_list_t* const runq = &context->runq[prio];
+    struct mg_actor_t* actor = 0;
     mg_critical_section_enter();
 
-    while (!mg_list_empty(runq)) {
+    if (!mg_list_empty(runq)) {
         struct mg_list_t* head = mg_list_first(runq);
-        struct mg_actor_t* actor = mg_list_entry(head, struct mg_actor_t, link);
+        actor = mg_list_entry(head, struct mg_actor_t, link);
         mg_list_unlink(head);
-        mg_critical_section_leave();
-        mg_actor_call(actor);
-        mg_critical_section_enter();
+
+        if (last && mg_list_empty(runq)) {
+            *last = true;
+        }
     }
 
     mg_critical_section_leave();
+    return actor;
+}
+
+static inline void mg_context_schedule(unsigned int vect) {
+    struct mg_actor_t* actor = 0;
+    while ((actor = _mg_context_pop_head(vect, 0))) {
+        mg_actor_call(actor);
+    }
 }
 
 #define MG_ACTOR_START static int mg_state = 0; switch(mg_state) { case 0:

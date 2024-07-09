@@ -1,26 +1,29 @@
-Header-only preemptive multitasking framework implementing actor model
-======================================================================
+Magnesium is a simple header-only framework implementing actor model for deeply embedded systems. It uses interrupt controller hardware for scheduling and supports preemptive multitasking.
 
 
-Overview
+Features
 --------
 
-The framework relies on hardware features of the interrupt controller: the ability to set user-defined priorities to IRQs and possibility to trigger interrupts programmatically. Actor's priorities are mapped to interrupt vectors and interrupt controller acts as a hardware scheduler. Therefore, interrupts are used as 'execution engine' for actors with certain priority.
-
-There are only three types of objects: actor, queue and message.
-
-When some event (hardware interrupt) occurs, it allocates and posts the message to a queue, this causes activation of the subscribed actor, moving the message into its incoming mailbox, moving the actor to the list of ready ones and also triggering interrupt vector corresponding to actor's priority. Hardware automatically transfers control to the activated vector, its handler then calls framework's function 'schedule' which eventually calls activated actors.
+- Preemptive multitasking
+- Hardware-assisted scheduling
+- Unlimited number of actors and queues
+- Message-passing communication
+- Timer facility
+- Hard real-time capability
+- Only ARMv6-M and ARMv7-M are supported at now
 
 
 API description
 ---------------
 
-Initialization of global context containing runqueues. Don't forget to declare g_mg_context at global variable with type mg_context_t.
+Please note that the framework itself does not initialize the interrupt controller, so it is user responsibility to properly set vector priorities before the first actor is created.
+
+Initialization of global context containing runqueues. Don't forget to declare g_mg_context as a global variable with type mg_context_t.
 
         void mg_context_init(void);
 
 
-Select the next actor to run. Should be called inside vectors designated to actors.
+Select the next actor to run. Must be called inside vectors designated to actors.
 
         void mg_context_schedule(unsigned int this_vect);
 
@@ -30,7 +33,7 @@ Message queue initialization.
         void mg_queue_init(struct mg_queue_t* q);
 
 
-Message pool initialization. Each message must contain header with type mg_message_t as its first member.
+Message pool initialization. Each message must contain a header with type mg_message_t as its first member.
 
         void mg_message_pool_init(struct mg_message_pool_t* pool, void* mem, size_t len, size_t msg_sz);
 
@@ -46,7 +49,7 @@ Example:
         mg_message_pool_init(&pool, msgs, sizeof(msgs), sizeof(msgs[0]));
 
 
-Actor object initialization. The actor will be implicitly subscribed to the queue specified. Function 'func' will be bound to the actor.
+Actor object initialization. The actor will be implicitly subscribed to the queue specified.
 If q == NULL then actor's function will be called inside init to obtain queue pointer. The rule of thumb is that if you want your actor to be always called with a valid message pointer including the first call then use 'subscription on init'. Otherwise, if you prefer async-style coding with internal explicit or implicit (MG_AWAIT) state machine then use NULL here, the actor will be called on init with no message to init the state machine.
 
         void mg_actor_init(
@@ -56,31 +59,23 @@ If q == NULL then actor's function will be called inside init to obtain queue po
             struct mg_queue_t* q);
 
 
-Message management:
+Message management. Alloc returns void* to avoid explicit typecast to specific message type. It may be safely assumed that this pointer always points to the message header. If the message pool returned NULL it may be typecasted to queue. If an actor subscribes to this queue it will be activated when someone returns a message into that pool. This is the way to deal with limited memory pools.
 
         void* mg_message_alloc(struct mg_message_pool_t* pool);
         void mg_message_free(struct mg_message_t* msg);
 
 
-Sending message to queue:
+Sending message to a queue. Queues have no internal storage, they contain just head of linked list so sending cannot fail, no need for return status.
 
         void mg_queue_push(struct mg_queue_t* q, struct mg_message_t* msg);
 
 
-If your system has the tick source you can also use timing facility. Raw low-level API works as follows:
+If your system has a tick source you can also use timing facility.
 
-        self->timeout = <delay in ticks>;
-        return MG_ACTOR_SUSPEND;
-
-
-The calling actor will be activated with zero-message when the timeout is reached. The more convenient way to use timers
-is async/await-like approach:
-
-        MG_AWAIT(mg_sleep_for(10, self));
+        return mg_sleep_for(<delay in ticks>, self);
 
 
-This will suspend the calling actor for 10 ticks. AWAIT-style API may be used with any queue with the same effect. 
-Internal implementation is based on C-coroutines utilizing implicit state machine similar to Duff's device.
+The calling actor will be activated with zero-message when the timeout is reached.
 Also, don't forget to call tick function in your timer's interrupt handler:
 
         mg_context_tick();
@@ -88,10 +83,7 @@ Also, don't forget to call tick function in your timer's interrupt handler:
 
 **Warning! Actor is automatically subscribed to queue it returns, don't call mg_queue_pop manually!**
 
-**Warning! It is expected that interrupts are enabled on call of these functions.**
-
-
-Tips & tricks: if the message pool returned NULL it may be typecasted to queue. If an actor returns such a queue it will be activated when someone frees message. This is the way to deal with limited memory pools.
+**Warning! It is expected that interrupts are enabled on call of all these functions.**
 
 
 How to use

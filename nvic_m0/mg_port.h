@@ -11,7 +11,7 @@
 #endif
 
 #if !defined MG_NVIC_PRIO_BITS
-#error Define MG_NVIC_PRIO_BITS as maximum number of supported preemption priorities for the target chip.
+#define MG_NVIC_PRIO_BITS 2 /* ARMv6-M supports only two priority bits. */
 #endif
 
 #if !defined MG_PRIO_MAX
@@ -41,7 +41,7 @@ static inline unsigned int mg_port_clz(uint32_t x) {
     ((((volatile unsigned char*)0xE000E400)[v]) >> (8 - MG_NVIC_PRIO_BITS))
 
 #define ISPR_ADDR ((volatile unsigned int*) 0xE000E200)
-#define pic_interrupt_request(v) ((*ISPR_ADDR) = 1U << (v))
+#define pic_interrupt_request(cpu, v) ((*ISPR_ADDR) = 1U << (v))
 
 #endif
 

@@ -14,6 +14,17 @@
 #include <limits.h>
 #include "mg_port.h"
 
+#ifndef MG_CPU_MAX
+struct mg_smp_protect_t {
+    unsigned int dummy;
+};
+#   define MG_CPU_MAX 1
+#   define mg_cpu_this() 0
+#   define mg_smp_protect_init(s)
+#   define mg_smp_protect_acquire(s) mg_critical_section_enter()
+#   define mg_smp_protect_release(s) mg_critical_section_leave()
+#endif
+
 struct mg_list_t {
     struct mg_list_t* next;
     struct mg_list_t* prev;
@@ -43,6 +54,7 @@ static inline void mg_list_unlink(struct mg_list_t* node) {
 }
 
 struct mg_queue_t {
+    struct mg_smp_protect_t lock;
     struct mg_list_t items;
     int length; /* Positive length - messages, negative - actors. */
 };
@@ -53,7 +65,7 @@ struct mg_message_pool_t {
     size_t total_length;
     size_t block_sz;
     size_t offset;
-    bool array_space_available;
+    volatile bool array_space_available;
 };
 
 struct mg_message_t {
@@ -61,10 +73,17 @@ struct mg_message_t {
     struct mg_list_t link;
 };
 
+struct mg_cpu_context_t {
+    struct mg_smp_protect_t lock;
+    struct mg_list_t runq[MG_PRIO_MAX];
+    struct mg_list_t timerq[MG_TIMERQ_MAX];
+    uint32_t ticks;
+};
+
 struct mg_actor_t {
-    struct mg_context_t* parent;
     struct mg_queue_t* (*func)(struct mg_actor_t* self, struct mg_message_t* m);
     unsigned vect;
+    unsigned cpu;
     unsigned prio;
     uint32_t timeout;
     struct mg_message_t* mailbox;
@@ -72,32 +91,35 @@ struct mg_actor_t {
 };
 
 struct mg_context_t {
-    struct mg_list_t runq[MG_PRIO_MAX];
-    struct mg_list_t timerq[MG_TIMERQ_MAX];
-    uint32_t ticks;
+    struct mg_cpu_context_t per_cpu_data[MG_CPU_MAX];
 };
 
 extern struct mg_context_t g_mg_context;
-#define MG_GLOBAL_CONTEXT() (&g_mg_context)
+#define MG_CPU_CONTEXT(cpu) (&g_mg_context.per_cpu_data[cpu])
 #define MG_ACTOR_SUSPEND ((struct mg_queue_t*) 1)
+#define MG_ACTOR_START static int _mg_state = 0; switch(_mg_state) { case 0:
+#define MG_ACTOR_END } return NULL
+#define MG_AWAIT(q) _mg_state = __LINE__; return (q); case __LINE__:
 
 static inline void mg_context_init(void) {
-    struct mg_context_t* self = MG_GLOBAL_CONTEXT();
-    const size_t nqueues = sizeof(self->runq) / sizeof(self->runq[0]);
-    const size_t nbuckets = sizeof(self->timerq) / sizeof(self->timerq[0]);
-    self->ticks = 0;
-    
-    for (size_t i = 0; i < nbuckets; ++i) {
-        mg_list_init(&self->timerq[i]);
-    }
+    for (unsigned int cpu = 0; cpu < MG_CPU_MAX; ++cpu) {
+        struct mg_cpu_context_t* const self = MG_CPU_CONTEXT(cpu);
+        self->ticks = 0;
+        mg_smp_protect_init(&self->lock);
+        
+        for (size_t i = 0; i < MG_TIMERQ_MAX; ++i) {
+            mg_list_init(&self->timerq[i]);
+        }
 
-    for (size_t i = 0; i < nqueues; ++i) {
-        mg_list_init(&self->runq[i]);
+        for (size_t i = 0; i < MG_PRIO_MAX; ++i) {
+            mg_list_init(&self->runq[i]);
+        }
     }
 }
 
 static inline void mg_queue_init(struct mg_queue_t* q) {
     mg_list_init(&q->items);
+    mg_smp_protect_init(&q->lock);
     q->length = 0;
 }
 
@@ -118,9 +140,12 @@ static inline void mg_message_pool_init(
 }
 
 static inline void _mg_actor_activate(struct mg_actor_t* actor) {
-    struct mg_context_t* const context = actor->parent;
+    assert(actor->cpu < MG_CPU_MAX);
+    struct mg_cpu_context_t* const context = MG_CPU_CONTEXT(actor->cpu);
+    mg_smp_protect_acquire(&context->lock);
     mg_list_append(&context->runq[actor->prio], &actor->link);
-    pic_interrupt_request(actor->vect);
+    mg_smp_protect_release(&context->lock);
+    pic_interrupt_request(actor->cpu, actor->vect);
 }
 
 static inline struct mg_message_t* mg_queue_pop(
@@ -128,7 +153,7 @@ static inline struct mg_message_t* mg_queue_pop(
     struct mg_actor_t* subscriber
 ) {
     struct mg_message_t* msg = 0;
-    mg_critical_section_enter();
+    mg_smp_protect_acquire(&q->lock);
 
     if (q->length > 0) {
         struct mg_list_t* const head = mg_list_first(&q->items);
@@ -140,7 +165,7 @@ static inline struct mg_message_t* mg_queue_pop(
         --q->length;
     }
 
-    mg_critical_section_leave();
+    mg_smp_protect_release(&q->lock);
     return msg;
 }
 
@@ -149,37 +174,40 @@ static inline void mg_queue_push(
     struct mg_message_t* msg
 ) {
     struct mg_actor_t* actor = 0;
-    mg_critical_section_enter();
+    mg_smp_protect_acquire(&q->lock);
 
     if (q->length++ >= 0) {
         mg_list_append(&q->items, &msg->link);
     } else {
         struct mg_list_t* const head = mg_list_first(&q->items);
-        mg_list_unlink(head);
         actor = mg_list_entry(head, struct mg_actor_t, link);
-        actor->mailbox = msg;
-        _mg_actor_activate(actor);
+        mg_list_unlink(head);
+        actor->mailbox = msg;    
     }
 
-    mg_critical_section_leave();
+    mg_smp_protect_release(&q->lock);
+
+    if (actor) {
+        _mg_actor_activate(actor);
+    }
 }
 
 static inline void* mg_message_alloc(struct mg_message_pool_t* pool) {
     struct mg_message_t* msg = 0;
-    mg_critical_section_enter();
 
     if (pool->array_space_available) {
-        msg = (void*)(pool->array + pool->offset);
-        pool->offset += pool->block_sz;
+        mg_smp_protect_acquire(&q->lock);
 
-        if ((pool->offset + pool->block_sz) > pool->total_length) {
-            pool->array_space_available = false;
+        if (pool->array_space_available) {
+            msg = (void*)(pool->array + pool->offset);
+            msg->parent = pool;
+            pool->offset += pool->block_sz;
+            pool->array_space_available = 
+                ((pool->offset + pool->block_sz) <= pool->total_length);
         }
 
-        msg->parent = pool;
+        mg_smp_protect_release(&q->lock);
     }
-
-    mg_critical_section_leave();
 
     if (!msg) {
         msg = mg_queue_pop(&pool->queue, 0);
@@ -200,47 +228,51 @@ static inline unsigned _mg_diff_msb(uint32_t x, uint32_t y) {
     return (msb < MG_TIMERQ_MAX) ? msb : MG_TIMERQ_MAX - 1;
 }
 
-static inline void mg_context_tick() {
-    struct mg_context_t* const context  = MG_GLOBAL_CONTEXT();
-    mg_critical_section_enter();
+static inline void mg_context_tick(void) {
+    struct mg_cpu_context_t* const context = MG_CPU_CONTEXT(mg_cpu_this());
+    mg_smp_protect_acquire(&context->lock);
     const uint32_t oldticks = context->ticks++;
     const unsigned i = _mg_diff_msb(oldticks, context->ticks);
     struct mg_list_t* const last = mg_list_last(&context->timerq[i]);
 
     while (!mg_list_empty(&context->timerq[i])) {
+        struct mg_actor_t* actor_to_wake = 0;
         struct mg_list_t* const head = mg_list_first(&context->timerq[i]);
-        mg_list_unlink(head);
         struct mg_actor_t* const actor = mg_list_entry(head, struct mg_actor_t, link);
+        mg_list_unlink(head);
 
         if (actor->timeout == context->ticks) {
             actor->timeout = 0;
-            _mg_actor_activate(actor);
+            actor_to_wake = actor;
         } else {
             const unsigned j = _mg_diff_msb(actor->timeout, context->ticks);
             mg_list_append(&context->timerq[j], &actor->link);
         }
 
+        mg_smp_protect_release(&context->lock);
+
+        if (actor_to_wake) {    
+            _mg_actor_activate(actor_to_wake);
+        }
+
+        mg_smp_protect_acquire(&context->lock);
+
         if (head == last) {
             break;
         }
-
-        mg_critical_section_leave(); /* Interrupt window . */
-        mg_critical_section_enter();
     }
 
-    mg_critical_section_leave();
+    mg_smp_protect_release(&context->lock);
 }
 
-static inline void _mg_actor_timeout(
-    struct mg_context_t* context,
-    struct mg_actor_t* actor
-) {
+static inline void _mg_actor_timeout(struct mg_actor_t* actor) {
     assert((actor->timeout != 0) && (actor->timeout < INT32_MAX));
-    mg_critical_section_enter();
+    struct mg_cpu_context_t* const context = MG_CPU_CONTEXT(mg_cpu_this());
+    mg_smp_protect_acquire(&context->lock);
     actor->timeout += context->ticks;
     const unsigned i = _mg_diff_msb(context->ticks, actor->timeout);
     mg_list_append(&context->timerq[i], &actor->link);
-    mg_critical_section_leave();
+    mg_smp_protect_release(&context->lock);
 }
 
 static inline void mg_actor_call(struct mg_actor_t* actor) {
@@ -252,7 +284,7 @@ static inline void mg_actor_call(struct mg_actor_t* actor) {
             actor->mailbox = 0;
 
             if (actor->timeout) {
-                _mg_actor_timeout(actor->parent, actor);
+                _mg_actor_timeout(actor);
                 break;
             } else {                    
                 continue; /* Zero timeout, just call the actor again. */
@@ -269,13 +301,11 @@ static inline void mg_actor_init(
     unsigned int vect,
     struct mg_queue_t* q
 ) {
-    struct mg_context_t* const context = MG_GLOBAL_CONTEXT();
-    const unsigned int prio = pic_vect2prio(vect);
-    assert(prio < MG_PRIO_MAX);
+    actor->prio = pic_vect2prio(vect);
+    assert(actor->prio < MG_PRIO_MAX);
     actor->func = func;
     actor->vect = vect;
-    actor->prio = prio;
-    actor->parent = context;
+    actor->cpu = mg_cpu_this();
     actor->timeout = 0;
     actor->mailbox = 0;
 
@@ -295,38 +325,33 @@ static inline struct mg_queue_t* mg_sleep_for(
     return MG_ACTOR_SUSPEND;
 }
 
-static inline struct mg_actor_t* _mg_context_pop_head(unsigned int vect, bool* last) {
-    struct mg_context_t* const context = MG_GLOBAL_CONTEXT();
+static inline struct mg_actor_t* _mg_context_pop_head(unsigned vect, bool* last) {
+    struct mg_cpu_context_t* const context = MG_CPU_CONTEXT(mg_cpu_this());
     const unsigned int prio = pic_vect2prio(vect);
     assert(prio < MG_PRIO_MAX);
     struct mg_list_t* const runq = &context->runq[prio];
     struct mg_actor_t* actor = 0;
-    mg_critical_section_enter();
+    mg_smp_protect_acquire(&context->lock);
 
     if (!mg_list_empty(runq)) {
         struct mg_list_t* head = mg_list_first(runq);
         actor = mg_list_entry(head, struct mg_actor_t, link);
         mg_list_unlink(head);
-
-        if (last && mg_list_empty(runq)) {
-            *last = true;
-        }
+        *last = mg_list_empty(runq);
     }
 
-    mg_critical_section_leave();
+    mg_smp_protect_release(&context->lock);
     return actor;
 }
 
-static inline void mg_context_schedule(unsigned int vect) {
+static inline void mg_context_schedule(unsigned vect) {
     struct mg_actor_t* actor = 0;
-    while ((actor = _mg_context_pop_head(vect, 0))) {
+    bool last = false;
+
+    while ((actor = _mg_context_pop_head(vect, &last))) {
         mg_actor_call(actor);
     }
 }
-
-#define MG_ACTOR_START static int mg_state = 0; switch(mg_state) { case 0:
-#define MG_ACTOR_END } return NULL
-#define MG_AWAIT(q) mg_state = __LINE__; return (q); case __LINE__:
 
 #endif
 

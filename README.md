@@ -106,7 +106,7 @@ Demo
 The demo is a toy example with just one actor which blinks the LED.
 Building:
 
-        make MG_DIR=..
+        make
 
 
 Why 'Magnesium'

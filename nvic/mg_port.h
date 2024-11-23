@@ -11,7 +11,7 @@
 #endif
 
 #if !defined MG_NVIC_PRIO_BITS
-#error Define MG_NVIC_PRIO_BITS as maximum number of supported preemption priorities for the target chip.
+#define MG_NVIC_PRIO_BITS 3 /* Three bits are guaranteed to be implemented in ARMv7-M. */
 #endif
 
 #if !defined MG_PRIO_MAX

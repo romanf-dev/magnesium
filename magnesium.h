@@ -196,7 +196,7 @@ static inline void* mg_message_alloc(struct mg_message_pool_t* pool) {
     struct mg_message_t* msg = 0;
 
     if (pool->array_space_available) {
-        mg_smp_protect_acquire(&q->lock);
+        mg_smp_protect_acquire(&pool->queue.lock);
 
         if (pool->array_space_available) {
             msg = (void*)(pool->array + pool->offset);
@@ -206,7 +206,7 @@ static inline void* mg_message_alloc(struct mg_message_pool_t* pool) {
                 ((pool->offset + pool->block_sz) <= pool->total_length);
         }
 
-        mg_smp_protect_release(&q->lock);
+        mg_smp_protect_release(&pool->queue.lock);
     }
 
     if (!msg) {

@@ -30,7 +30,46 @@
     ((((volatile unsigned char*)0xE000E400)[v]) >> (8 - MG_NVIC_PRIO_BITS))
 
 #define STIR_ADDR ((volatile unsigned int*) 0xE000EF00)
-#define pic_interrupt_request(cpu, v) ((*STIR_ADDR) = v)
 
+#ifndef MG_CPU_MAX
+#define pic_interrupt_request(cpu, v) ((*STIR_ADDR) = v)
+#else
+
+#include <stdatomic.h>
+
+struct mg_smp_protect_t {
+    atomic_uint spinlock;
+};
+
+extern unsigned int mg_cpu_this(void);
+extern void pic_interrupt_request(unsigned int cpu, unsigned int vect);
+
+static inline void mg_smp_protect_init(struct mg_smp_protect_t* s) {
+    atomic_init(&s->spinlock, 0);
+}
+
+static inline void mg_smp_protect_acquire(struct mg_smp_protect_t* s) {
+    unsigned int expected = 0;
+    mg_critical_section_enter();
+
+    while (!atomic_compare_exchange_weak_explicit(
+        &s->spinlock, 
+        &expected, 
+        1,
+        memory_order_acquire,
+        memory_order_relaxed)
+    ) {
+        expected = 0;
+        asm volatile("wfe");
+    }
+}
+
+static inline void mg_smp_protect_release(struct mg_smp_protect_t* s) {
+    atomic_store_explicit(&s->spinlock, 0, memory_order_release);
+    asm volatile("sev");
+    mg_critical_section_leave();
+}
+
+#endif
 #endif
 

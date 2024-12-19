@@ -19,10 +19,10 @@ enum {
 };
 
 //
-// Since RP2350 can't send arbitrary interrupts from once core to another the 
+// Since RP2350 can't send arbitrary interrupts from one core to another the 
 // process is two-staged:
 // - Requesting core atomically sets a bit corresponding to a target actor
-//   priority. Since maximum supported priority is single uint is enough.
+//   priority. Since maximum supported priority is 32 single uint is enough.
 // - Requesting core sends doorbell interrupt to the target core.
 // - Target core inside its doorbell ISR handler atomically gets request bits
 //   and sets the variable to 0. If any other requests are happen between 

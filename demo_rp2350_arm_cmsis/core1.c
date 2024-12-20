@@ -21,11 +21,11 @@ static inline bool multicore_fifo_wready(void) {
 
 static inline void multicore_fifo_push_blocking(uint32_t data) {
     while (!multicore_fifo_wready()) {
-        asm volatile ("nop");
+        __NOP();
     }
 
     SIO->FIFO_WR = data;
-    asm volatile ("sev");
+    __SEV();
 }
 
 static inline void multicore_fifo_drain(void) {
@@ -36,7 +36,7 @@ static inline void multicore_fifo_drain(void) {
 
 static inline uint32_t multicore_fifo_pop_blocking(void) {
     while (!multicore_fifo_rvalid()) {
-       asm volatile ("wfe");
+       __WFE();
     }
 
     return SIO->FIFO_RD;
@@ -58,7 +58,7 @@ void core1_start(void (*fn)(void)) {
 
         if (!cmd) {
             multicore_fifo_drain();
-            asm volatile ("sev");
+            __SEV();
         }
 
         multicore_fifo_push_blocking(cmd);

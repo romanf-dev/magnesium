@@ -67,7 +67,7 @@ static struct mg_queue_t* sender(struct mg_actor_t* self, struct mg_message_t* m
     MG_ACTOR_START;
     
     for (;;) {      
-        MG_AWAIT(mg_sleep_for(50, self));
+        MG_AWAIT(mg_sleep_for(100, self));
         struct example_msg_t* msg = mg_message_alloc(&g_pool);
 
         if (msg) {
@@ -166,13 +166,11 @@ int main(void) {
     NVIC_EnableIRQ(0);
 
     //
-    // Enable Systick to trigger interrupt every 100ms.
+    // Enable Systick to trigger interrupt every 1ms.
     //
-    SysTick->LOAD  = 48000U - 1;
-    SysTick->VAL   = 0;
-    SysTick->CTRL  = 7;
-
-    for (;;);
+    SysTick_Config(48000);
+    for(;;);
+    
     return 0; /* make compiler happy. */
 }
 

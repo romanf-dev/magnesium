@@ -3,8 +3,8 @@
   * @brief Magnesium porting layer for ARM NVIC interrupt controller.
   * License: Public domain. The code is provided as is without any warranty.
   */
-#ifndef _MG_PORT_H_
-#define _MG_PORT_H_
+#ifndef MG_PORT_H
+#define MG_PORT_H
 
 #if !defined (__GNUC__)
 #error This header is intended to be used in GNU GCC only because of non-portable asm functions. 
@@ -34,6 +34,10 @@
 #ifndef MG_CPU_MAX
 #define pic_interrupt_request(cpu, v) ((*STIR_ADDR) = v)
 #else
+
+#if __STDC_NO_ATOMICS__ == 1
+#error Compiler does not support atomic types.
+#endif
 
 #include <stdatomic.h>
 

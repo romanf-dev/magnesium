@@ -3,7 +3,7 @@
   *  @file   startup_rp2350.s
   *  @brief  Startup code and vector table for RP2350.
   ******************************************************************************
-  *  License: Public domain.
+  *  License: BSD-2-Clause.
   *****************************************************************************/
 
 .syntax unified

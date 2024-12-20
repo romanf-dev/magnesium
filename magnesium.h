@@ -1,11 +1,11 @@
 /** 
   * @file  magnesium.h
   * @brief Interrupt-based preemptive multitasking.
-  * License: Public domain. The code is provided as is without any warranty.
+  * License: BSD-2-Clause.
   */
 
-#ifndef _MAGNESIUM_H_
-#define _MAGNESIUM_H_
+#ifndef MAGNESIUM_H
+#define MAGNESIUM_H
 
 #include <stddef.h>
 #include <stdbool.h>
@@ -81,12 +81,12 @@ struct mg_cpu_context_t {
 };
 
 struct mg_actor_t {
-    struct mg_queue_t* (*func)(struct mg_actor_t* self, struct mg_message_t* m);
+    struct mg_queue_t* (*func)(struct mg_actor_t* self, struct mg_message_t* restrict m);
     unsigned vect;
     unsigned cpu;
     unsigned prio;
     uint32_t timeout;
-    struct mg_message_t* mailbox;
+    struct mg_message_t* restrict mailbox;
     struct mg_list_t link;
 };
 
@@ -102,7 +102,7 @@ extern struct mg_context_t g_mg_context;
 #define MG_AWAIT(q) _mg_state = __LINE__; return (q); case __LINE__:
 
 static inline void mg_context_init(void) {
-    for (unsigned int cpu = 0; cpu < MG_CPU_MAX; ++cpu) {
+    for (unsigned cpu = 0; cpu < MG_CPU_MAX; ++cpu) {
         struct mg_cpu_context_t* const self = MG_CPU_CONTEXT(cpu);
         self->ticks = 0;
         mg_smp_protect_init(&self->lock);
@@ -148,11 +148,11 @@ static inline void _mg_actor_activate(struct mg_actor_t* actor) {
     pic_interrupt_request(actor->cpu, actor->vect);
 }
 
-static inline struct mg_message_t* mg_queue_pop(
+static inline struct mg_message_t* restrict mg_queue_pop(
     struct mg_queue_t* q, 
     struct mg_actor_t* subscriber
 ) {
-    struct mg_message_t* msg = 0;
+    struct mg_message_t* restrict msg = 0;
     mg_smp_protect_acquire(&q->lock);
 
     if (q->length > 0) {
@@ -171,7 +171,7 @@ static inline struct mg_message_t* mg_queue_pop(
 
 static inline void mg_queue_push(
     struct mg_queue_t* q, 
-    struct mg_message_t* msg
+    struct mg_message_t* restrict msg
 ) {
     struct mg_actor_t* actor = 0;
     mg_smp_protect_acquire(&q->lock);
@@ -216,7 +216,7 @@ static inline void* mg_message_alloc(struct mg_message_pool_t* pool) {
     return msg;
 }
 
-static inline void mg_message_free(struct mg_message_t* msg) {
+static inline void mg_message_free(struct mg_message_t* restrict msg) {
     struct mg_message_pool_t* const pool = msg->parent;
     mg_queue_push(&pool->queue, msg);
 }
@@ -297,7 +297,7 @@ static inline void mg_actor_call(struct mg_actor_t* actor) {
 
 static inline void mg_actor_init(
     struct mg_actor_t* actor, 
-    struct mg_queue_t* (*func)(struct mg_actor_t*, struct mg_message_t*),
+    struct mg_queue_t* (*func)(struct mg_actor_t*, struct mg_message_t* restrict),
     unsigned int vect,
     struct mg_queue_t* q
 ) {
@@ -327,7 +327,7 @@ static inline struct mg_queue_t* mg_sleep_for(
 
 static inline struct mg_actor_t* _mg_context_pop_head(unsigned vect, bool* last) {
     struct mg_cpu_context_t* const context = MG_CPU_CONTEXT(mg_cpu_this());
-    const unsigned int prio = pic_vect2prio(vect);
+    const unsigned prio = pic_vect2prio(vect);
     assert(prio < MG_PRIO_MAX);
     struct mg_list_t* const runq = &context->runq[prio];
     struct mg_actor_t* actor = 0;

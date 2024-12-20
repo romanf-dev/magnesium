@@ -72,7 +72,7 @@ void SysTick_Handler(void) {
 //
 // Actor switches LED state once new message arrives.
 //
-static struct mg_queue_t* actor(struct mg_actor_t* self, struct mg_message_t* m) {
+static struct mg_queue_t* actor(struct mg_actor_t* self, struct mg_message_t* restrict m) {
     MG_ACTOR_START;
     
     for (;;) {      

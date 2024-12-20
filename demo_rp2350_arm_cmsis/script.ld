@@ -1,3 +1,7 @@
+/*
+ * Linker script for RP2350.
+ * Scratch X/Y are used as stacks for cores 0/1 respectively.
+ */
 
 ENTRY(elf_entry)
 

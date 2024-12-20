@@ -65,7 +65,7 @@ void SysTick_Handler(void) {
 //
 // Actor sends messages to another actor.
 //
-static struct mg_queue_t* sender(struct mg_actor_t* self, struct mg_message_t* m) {
+static struct mg_queue_t* sender(struct mg_actor_t* self, struct mg_message_t* restrict m) {
     MG_ACTOR_START;
     
     for (;;) {      
@@ -83,7 +83,7 @@ static struct mg_queue_t* sender(struct mg_actor_t* self, struct mg_message_t* m
 //
 // Actor switches LED state once new message arrives.
 //
-static struct mg_queue_t* receiver(struct mg_actor_t* self, struct mg_message_t* m) {
+static struct mg_queue_t* receiver(struct mg_actor_t* self, struct mg_message_t* restrict m) {
     MG_ACTOR_START;
     
     for (;;) {
@@ -155,9 +155,7 @@ int main(void) {
     //
     // Enable Systick to trigger interrupt every 1ms.
     //
-    SysTick->LOAD  = 84000U - 1U;
-    SysTick->VAL   = 0;
-    SysTick->CTRL  = 7;
+    SysTick_Config(84000);
 
     for (;;);
 

@@ -9,13 +9,15 @@
 #include <stdint.h>
 #include <stdalign.h>
 #include <stdnoreturn.h>
+#include <limits.h>
 #include "RP2350.h"
 #include "magnesium.h"
 
 enum {
     SPAREIRQ_IRQ_0 = 46, // Spare irq vector. See 3.8.6.1.2 in the datasheet.
-    SYSTICK_VAL = 12000,
+    SYSTICK_VAL = 12000, // Clocks at boot without PLL setup.
     EXTEXCLALL = 1 << 29,// See ACTLR bits in 3.7.5 in the datasheet.
+    UINT_MSB = sizeof(unsigned int) * CHAR_BIT - 1,
 };
 
 //
@@ -55,7 +57,7 @@ void doorbell_isr(void) {
     unsigned int prev = atomic_exchange(&g_ipi_request[cpu], 0);
 
     while (prev) {
-        const unsigned int prio = 31 - mg_port_clz(prev);
+        const unsigned int prio = UINT_MSB - mg_port_clz(prev);
         const unsigned int vect = prio + SPAREIRQ_IRQ_0;
         prev &= ~(1U << prio);
         NVIC->STIR = vect;
@@ -101,7 +103,7 @@ static inline void cpu_init(void) {
 // Actor1 runs on core0 and sends messages to actor2 every 100 ticks.
 // Message payload is not used at now it is just a signal.
 //
-struct mg_queue_t* actor1_fn(struct mg_actor_t *self, struct mg_message_t* m) {
+struct mg_queue_t* actor1_fn(struct mg_actor_t *self, struct mg_message_t* restrict m) {
     static bool s_initialized = false;
 
     if (s_initialized) {
@@ -120,7 +122,7 @@ struct mg_queue_t* actor1_fn(struct mg_actor_t *self, struct mg_message_t* m) {
 //
 // Actor2 runs on core1 and toggles the LED on each message it receives.
 //
-struct mg_queue_t* actor2_fn(struct mg_actor_t *self, struct mg_message_t* m) {
+struct mg_queue_t* actor2_fn(struct mg_actor_t *self, struct mg_message_t* restrict m) {
     SIO->GPIO_OUT_XOR = 1U << 25;
     mg_message_free(m);
     return &g_queue;

@@ -7,23 +7,13 @@ OBJS = $(patsubst %.c,%.o,$(SRCS))
 
 GCC_PREFIX ?= arm-none-eabi-
 MG_DIR ?= ..
+PICOTOOL_PATH ?= echo To get uf2 use picotool 
 
 .PHONY: all clean
 
-ifndef PICO_SDK_PATH
-$(error PICO_SDK_PATH is not set)
-endif
-
-ifndef PICOTOOL_PATH
-$(error PICOTOOL_PATH is not set)
-endif
-
 %.o : %.c
 	$(GCC_PREFIX)gcc -ffreestanding -mcpu=cortex-m33 -mcmse -mthumb -O2 -DMG_CPU_MAX=2 \
-	-I $(MG_DIR) -I $(MG_DIR)/nvic \
-	-I $(PICO_SDK_PATH)/src/rp2_common/cmsis/stub/CMSIS/Device/RP2350/Include \
-	-I $(PICO_SDK_PATH)/src/rp2_common/cmsis/stub/CMSIS/Core/Include \
-	-I $(PICO_SDK_PATH)/src/rp2_common/cmsis/include \
+	-I $(MG_DIR) -I $(MG_DIR)/nvic -I CMSIS/Device/RP2350/Include -I CMSIS/Core/Include \
 	-Wall -Wl,--build-id=none -c -o $@ $<
 
 %.o : %.s

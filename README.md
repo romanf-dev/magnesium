@@ -166,6 +166,10 @@ Demo
 
 The demo is a toy example blinking the LED. Use make to build. It is expected 
 that arm-none-eabi- compiler is available via the PATH.
+Most demos use make for building. For Raspberry Pi Pico 2 SDK version use
+
+    cmake -DPICO_BOARD=pico2
+    make
 
 
 Why 'Magnesium'

@@ -18,11 +18,42 @@
 struct mg_smp_protect_t {
     unsigned int dummy;
 };
+
 #   define MG_CPU_MAX 1
 #   define mg_cpu_this() 0
 #   define mg_smp_protect_init(s)
 #   define mg_smp_protect_acquire(s) mg_critical_section_enter()
 #   define mg_smp_protect_release(s) mg_critical_section_leave()
+#else
+#   include <stdatomic.h>
+
+struct mg_smp_protect_t {
+    atomic_uint spinlock;
+};
+
+static inline void mg_smp_protect_init(struct mg_smp_protect_t* s) {
+    atomic_init(&s->spinlock, 0);
+}
+
+static inline void mg_smp_protect_acquire(struct mg_smp_protect_t* s) {
+    mg_critical_section_enter();
+
+    while (!atomic_compare_exchange_weak_explicit(
+        &s->spinlock, 
+        &(unsigned) { 0 },
+        1,
+        memory_order_acquire,
+        memory_order_relaxed)
+    ) {
+        mg_port_wait_event();
+    }
+}
+
+static inline void mg_smp_protect_release(struct mg_smp_protect_t* s) {
+    atomic_store_explicit(&s->spinlock, 0, memory_order_release);
+    mg_port_send_event();
+    mg_critical_section_leave();
+}
 #endif
 
 struct mg_list_t {
@@ -34,6 +65,7 @@ struct mg_list_t {
 #define mg_list_empty(head) ((head)->next == (head))
 #define mg_list_first(head) ((head)->next)
 #define mg_list_last(head) ((head)->prev)
+#define mg_list_unlink_head(head) mg_list_unlink(mg_list_first(head))
 #define mg_list_entry(p, type, member) \
     ((type*)((char*)(p) - (size_t)(&((type*)0)->member)))
 
@@ -47,10 +79,11 @@ static inline void mg_list_append(
     head->prev = node;
 }
 
-static inline void mg_list_unlink(struct mg_list_t* node) {
+static inline struct mg_list_t* mg_list_unlink(struct mg_list_t* node) {
     node->prev->next = node->next;
     node->next->prev = node->prev;
     node->next = node->prev = 0;
+    return node;
 }
 
 struct mg_queue_t {
@@ -81,7 +114,7 @@ struct mg_cpu_context_t {
 };
 
 struct mg_actor_t {
-    struct mg_queue_t* (*func)(struct mg_actor_t* self, struct mg_message_t* restrict m);
+    struct mg_queue_t* (*func)(struct mg_actor_t*, struct mg_message_t* restrict);
     unsigned vect;
     unsigned cpu;
     unsigned prio;
@@ -156,8 +189,7 @@ static inline struct mg_message_t* restrict mg_queue_pop(
     mg_smp_protect_acquire(&q->lock);
 
     if (q->length > 0) {
-        struct mg_list_t* const head = mg_list_first(&q->items);
-        mg_list_unlink(head);
+        struct mg_list_t* const head = mg_list_unlink_head(&q->items);
         msg = mg_list_entry(head, struct mg_message_t, link);
         --q->length;
     } else if (subscriber != 0) {
@@ -179,9 +211,8 @@ static inline void mg_queue_push(
     if (q->length++ >= 0) {
         mg_list_append(&q->items, &msg->link);
     } else {
-        struct mg_list_t* const head = mg_list_first(&q->items);
+        struct mg_list_t* const head = mg_list_unlink_head(&q->items);
         actor = mg_list_entry(head, struct mg_actor_t, link);
-        mg_list_unlink(head);
         actor->mailbox = msg;    
     }
 
@@ -237,9 +268,8 @@ static inline void mg_context_tick(void) {
 
     while (!mg_list_empty(&context->timerq[i])) {
         struct mg_actor_t* actor_to_wake = 0;
-        struct mg_list_t* const head = mg_list_first(&context->timerq[i]);
+        struct mg_list_t* const head = mg_list_unlink_head(&context->timerq[i]);
         struct mg_actor_t* const actor = mg_list_entry(head, struct mg_actor_t, link);
-        mg_list_unlink(head);
 
         if (actor->timeout == context->ticks) {
             actor->timeout = 0;
@@ -334,9 +364,8 @@ static inline struct mg_actor_t* _mg_context_pop_head(unsigned vect, bool* last)
     mg_smp_protect_acquire(&context->lock);
 
     if (!mg_list_empty(runq)) {
-        struct mg_list_t* head = mg_list_first(runq);
+        struct mg_list_t* const head = mg_list_unlink_head(runq);
         actor = mg_list_entry(head, struct mg_actor_t, link);
-        mg_list_unlink(head);
         *last = mg_list_empty(runq);
     }
 
@@ -346,12 +375,10 @@ static inline struct mg_actor_t* _mg_context_pop_head(unsigned vect, bool* last)
 
 static inline void mg_context_schedule(unsigned vect) {
     struct mg_actor_t* actor = 0;
-    bool last = false;
 
-    while ((actor = _mg_context_pop_head(vect, &last))) {
+    while ((actor = _mg_context_pop_head(vect, &(bool) { false }))) {
         mg_actor_call(actor);
     }
 }
 
 #endif
-

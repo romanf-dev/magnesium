@@ -1,14 +1,17 @@
 /*
  * Linker script for RP2350.
  * Scratch X/Y are used as stacks for cores 0/1 respectively.
+ * This script uses 'fake' FLASH at the beginning of the RAM to keep 
+ * whole image in RAM (data copying from 'flash' to ram is also kept).
+ * Adjust flash address to actual flash to make it persistent.
  */
 
 ENTRY(elf_entry)
 
 MEMORY
 {
-    FLASH (rx) : ORIGIN = 0x10000000, LENGTH = 4096k
-    RAM(rwx) : ORIGIN =  0x20000000, LENGTH = 512k
+    FLASH (rx) : ORIGIN = 0x20000000, LENGTH = 64k
+    RAM(rwx) : ORIGIN =  0x20010000, LENGTH = 448k
     SCRATCH_X(rwx) : ORIGIN = 0x20080000, LENGTH = 4k
     SCRATCH_Y(rwx) : ORIGIN = 0x20081000, LENGTH = 4k
 }

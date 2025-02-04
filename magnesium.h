@@ -172,12 +172,16 @@ static inline void mg_message_pool_init(
     pool->array_space_available = true;
 }
 
-static inline void _mg_actor_activate(struct mg_actor_t* actor) {
+static inline void _mg_actor_insert(struct mg_actor_t* actor) {
     assert(actor->cpu < MG_CPU_MAX);
     struct mg_cpu_context_t* const context = MG_CPU_CONTEXT(actor->cpu);
     mg_smp_protect_acquire(&context->lock);
     mg_list_append(&context->runq[actor->prio], &actor->link);
     mg_smp_protect_release(&context->lock);
+}
+
+static inline void _mg_actor_activate(struct mg_actor_t* actor) {
+    _mg_actor_insert(actor);
     pic_interrupt_request(actor->cpu, actor->vect);
 }
 
@@ -313,12 +317,13 @@ static inline void mg_actor_call(struct mg_actor_t* actor) {
         if (q == MG_ACTOR_SUSPEND) {
             actor->mailbox = 0;
 
-            if (actor->timeout) {
-                _mg_actor_timeout(actor);
-                break;
+            if (actor->timeout != 0) {
+                _mg_actor_timeout(actor);    
             } else {                    
-                continue; /* Zero timeout, just call the actor again. */
+                _mg_actor_insert(actor);
             }
+
+            break;
         }
 
         actor->mailbox = mg_queue_pop(q, actor);

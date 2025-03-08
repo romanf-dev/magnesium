@@ -12,6 +12,7 @@ static unsigned actor1_counter = 0;
 static unsigned actor2_counter = 0;
 
 struct mg_queue_t* actor1_fn(struct mg_actor_t *self, struct mg_message_t* restrict m) {
+    UNUSED_ARG(m);
     MG_ACTOR_START;
 
     for (;;) {
@@ -31,6 +32,7 @@ struct mg_queue_t* actor1_fn(struct mg_actor_t *self, struct mg_message_t* restr
 }
 
 struct mg_queue_t* actor2_fn(struct mg_actor_t *self, struct mg_message_t* restrict m) {
+    UNUSED_ARG(m);
     MG_ACTOR_START;
 
     for (;;) {

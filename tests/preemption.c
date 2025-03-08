@@ -15,6 +15,7 @@ static bool actor1_started = false;
 static bool actor2_started = false;
 
 struct mg_queue_t* actor1_fn(struct mg_actor_t *self, struct mg_message_t* restrict m) {
+    UNUSED_ARG(self);
     actor1_started = true;
     assert(!actor2_started);
     mg_queue_push(&g_queue, m);
@@ -24,6 +25,7 @@ struct mg_queue_t* actor1_fn(struct mg_actor_t *self, struct mg_message_t* restr
 }
 
 struct mg_queue_t* actor2_fn(struct mg_actor_t *self, struct mg_message_t* restrict m) {
+    UNUSED_ARG(self);
     actor2_started = true;
     assert(actor1_started && actor2_started);
     mg_message_free(m);

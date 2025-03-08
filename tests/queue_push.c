@@ -15,6 +15,7 @@ static struct mg_actor_t g_actor;
 static bool actor_started = false;
 
 struct mg_queue_t* actor_fn(struct mg_actor_t *self, struct mg_message_t* restrict m) {
+    UNUSED_ARG(self);
     struct test_message_t* const msg = (struct test_message_t*) m;
     assert(msg->payload == 0xc0cac01a);
     actor_started = true;

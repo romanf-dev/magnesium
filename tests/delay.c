@@ -8,6 +8,7 @@ static struct mg_actor_t g_actor;
 static int actor_calls = 0;
 
 struct mg_queue_t* actor_fn(struct mg_actor_t *self, struct mg_message_t* restrict m) {
+    UNUSED_ARG(m);
     actor_calls++;
     return mg_sleep_for(10, self);
 }

@@ -16,6 +16,7 @@ struct mg_context_t g_mg_context;
 static bool actor_started = false;
 
 struct mg_queue_t* actor_fn(struct mg_actor_t *self, struct mg_message_t* restrict m) {
+    UNUSED_ARG(self);
     struct test_message_t* msg = (struct test_message_t*) m;
     actor_started = true;
     assert(msg);

@@ -5,6 +5,8 @@
 #ifndef MOCKS_H
 #define MOCKS_H
 
+#define UNUSED_ARG(arg) (void)(arg)
+
 static bool g_req = false;
 
 //
@@ -14,6 +16,8 @@ static bool g_req = false;
 // way when activation of actor with priority 1 causes immediate preemption.
 //
 void pic_interrupt_request(unsigned int cpu, unsigned int v) {
+    UNUSED_ARG(cpu);
+
     if (v == 1) {
         mg_context_schedule(1);        
     } else {

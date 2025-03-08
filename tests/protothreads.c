@@ -14,6 +14,8 @@ static bool actor_started = false;
 static bool msg_received = false;
 
 struct mg_queue_t* actor_fn(struct mg_actor_t *self, struct mg_message_t* restrict m) {
+    UNUSED_ARG(self);
+    UNUSED_ARG(m);
     MG_ACTOR_START;
 
     for (;;) {

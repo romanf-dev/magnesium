@@ -185,7 +185,7 @@ static inline void _mg_actor_activate(struct mg_actor_t* actor) {
     pic_interrupt_request(actor->cpu, actor->vect);
 }
 
-static inline struct mg_message_t* restrict mg_queue_pop(
+static inline struct mg_message_t* mg_queue_pop(
     struct mg_queue_t* q, 
     struct mg_actor_t* subscriber
 ) {

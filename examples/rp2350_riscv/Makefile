@@ -7,10 +7,9 @@ OBJS = $(patsubst %.c,%.o,$(SRCS))
 
 GCC_PREFIX ?= riscv32-unknown-elf-
 PICOTOOL_PATH ?= echo "\e[33mPICOTOOL_PATH is not defined.\e[0m" To get uf2 use picotool
-MG_PATH ?= ..
+MG_PATH ?=../..
 
-.PHONY: clean
-.PHONY: bin
+.PHONY: clean all
 
 %.o: %.c
 	$(GCC_PREFIX)gcc -ffreestanding -march=rv32ima_zicsr_zbb -Wall -Wl,--build-id=none -O2 \

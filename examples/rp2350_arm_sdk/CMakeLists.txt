@@ -13,10 +13,10 @@ add_executable(demo main.c)
 
 pico_add_extra_outputs(demo)
 
-if(NOT DEFINED ENV{MG_DIR})
-    set(ENV{MG_DIR} "..")
+if(NOT DEFINED ENV{MG_PATH})
+    set(ENV{MG_PATH} "../..")
 endif()
 
-target_include_directories(demo PRIVATE "$ENV{MG_DIR}" "$ENV{MG_DIR}/nvic" )
+target_include_directories(demo PRIVATE "$ENV{MG_PATH}" "$ENV{MG_PATH}/nvic" )
 target_link_libraries(demo pico_stdlib pico_multicore)
 

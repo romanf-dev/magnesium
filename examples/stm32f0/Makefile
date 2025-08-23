@@ -1,16 +1,15 @@
 #
 # Simple makefile for compiling all .c and .s files in the current folder.
-# No dependency tracking, use make clean if a header is changed.
 #
 
 SRCS = $(wildcard *.c)
 OBJS = $(patsubst %.c,%.o,$(SRCS))
-
 GCC_PREFIX ?= arm-none-eabi-
-MG_DIR ?= ..
+MG_PATH ?= ../..
 
 %.o : %.c
-	$(GCC_PREFIX)gcc -ffreestanding -ffunction-sections -mcpu=cortex-m0 -DSTM32F030 -Wall -O2 -mthumb -I $(MG_DIR) -I $(MG_DIR)/nvic_m0 -I . -c -o $@ $<
+	$(GCC_PREFIX)gcc -ffreestanding -ffunction-sections -mcpu=cortex-m0 -DSTM32F030 -Wall -O2 -mthumb \
+	-I $(MG_PATH) -I $(MG_PATH)/nvic_m0 -I . -c -o $@ $<
 
 %.o : %.s
 	$(GCC_PREFIX)gcc -mcpu=cortex-m0 -mthumb -c -o $@ $<

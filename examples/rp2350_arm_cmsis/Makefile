@@ -4,9 +4,8 @@
 
 SRCS = $(wildcard *.c)
 OBJS = $(patsubst %.c,%.o,$(SRCS))
-
 GCC_PREFIX ?= arm-none-eabi-
-MG_PATH ?= ..
+MG_PATH ?= ../..
 PICOTOOL_PATH ?= echo To get uf2 use picotool 
 
 .PHONY: all clean

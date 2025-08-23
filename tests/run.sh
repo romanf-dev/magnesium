@@ -1,15 +1,19 @@
 #!/bin/bash
 
+error() {
+    rm -f *.test
+    exit 1
+}
+
 for f in *.c; do
-    gcc -O2 -std=c99 -Wextra -fanalyzer -pedantic -Wall -o $f.tst -I .. -I . $f 
-done
-
-for f in *.tst; do
-    ./$f
-    if [ $? -eq 0 ]; then
-        echo $f: OK
+    gcc -O2 -std=c99 -Wextra -fanalyzer -pedantic -Wall -o $f.test -I .. -I . $f 
+    if [ $? -ne 0 ]; then error 
     fi
+    ./$f.test
+    if [ $? -ne 0 ]; then error 
+    fi
+    echo $f: OK
 done
 
-rm -f *.tst
+rm -f *.test
 

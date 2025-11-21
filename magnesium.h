@@ -56,39 +56,45 @@ static inline void mg_smp_protect_release(struct mg_smp_protect_t* s) {
 }
 #endif
 
-struct mg_list_t {
-    struct mg_list_t* next;
-    struct mg_list_t* prev;
+struct mg_node_t {
+    struct mg_node_t* next;
 };
 
-#define mg_list_init(head) ((head)->next = (head)->prev = (head))
-#define mg_list_empty(head) ((head)->next == (head))
-#define mg_list_first(head) ((head)->next)
-#define mg_list_last(head) ((head)->prev)
-#define mg_list_unlink_head(head) mg_list_unlink(mg_list_first(head))
-#define mg_list_entry(p, type, member) \
-    ((type*)((char*)(p) - (size_t)(&((type*)0)->member)))
+struct mg_fifo_t {
+    struct mg_node_t dummy;
+    struct mg_node_t* tail;
+};
 
-static inline void mg_list_append(
-    struct mg_list_t* head, 
-    struct mg_list_t* node
-) {
-    node->next = head;
-    node->prev = head->prev;
-    node->prev->next = node;
-    head->prev = node;
+static inline void mg_fifo_init(struct mg_fifo_t* fifo) {
+    fifo->tail = &fifo->dummy;
+    fifo->dummy.next = 0;
 }
 
-static inline struct mg_list_t* mg_list_unlink(struct mg_list_t* node) {
-    node->prev->next = node->next;
-    node->next->prev = node->prev;
-    node->next = node->prev = 0;
-    return node;
+static inline bool mg_fifo_empty(struct mg_fifo_t* fifo) {
+    return fifo->tail == &fifo->dummy;
+}
+
+#define mg_fifo_last(head) ((head)->tail)
+#define mg_fifo_entry(p, type, member) \
+    ((type*)((char*)(p) - (size_t)(&((type*)0)->member)))
+
+static inline void mg_fifo_enqueue(struct mg_fifo_t* fifo, struct mg_node_t* node) {
+    node->next = 0;
+    fifo->tail->next = node;
+    fifo->tail = node;
+}
+
+static inline struct mg_node_t* mg_fifo_dequeue(struct mg_fifo_t* fifo) {
+    struct mg_node_t* const head = fifo->dummy.next;
+    fifo->dummy.next = head->next;
+    if (head->next == 0)    
+        fifo->tail = &fifo->dummy;
+    return head;
 }
 
 struct mg_queue_t {
     struct mg_smp_protect_t lock;
-    struct mg_list_t items;
+    struct mg_fifo_t items;
     int length; /* Positive length - messages, negative - actors. */
 };
 
@@ -103,13 +109,13 @@ struct mg_message_pool_t {
 
 struct mg_message_t {
     struct mg_message_pool_t* parent;
-    struct mg_list_t link;
+    struct mg_node_t link;
 };
 
 struct mg_cpu_context_t {
     struct mg_smp_protect_t lock;
-    struct mg_list_t runq[MG_PRIO_MAX];
-    struct mg_list_t timerq[MG_TIMERQ_MAX];
+    struct mg_fifo_t runq[MG_PRIO_MAX];
+    struct mg_fifo_t timerq[MG_TIMERQ_MAX];
     uint32_t ticks;
 };
 
@@ -120,7 +126,7 @@ struct mg_actor_t {
     unsigned prio;
     uint32_t timeout;
     struct mg_message_t* restrict mailbox;
-    struct mg_list_t link;
+    struct mg_node_t link;
 };
 
 struct mg_context_t {
@@ -141,17 +147,17 @@ static inline void mg_context_init(void) {
         mg_smp_protect_init(&self->lock);
         
         for (size_t i = 0; i < MG_TIMERQ_MAX; ++i) {
-            mg_list_init(&self->timerq[i]);
+            mg_fifo_init(&self->timerq[i]);
         }
 
         for (size_t i = 0; i < MG_PRIO_MAX; ++i) {
-            mg_list_init(&self->runq[i]);
+            mg_fifo_init(&self->runq[i]);
         }
     }
 }
 
 static inline void mg_queue_init(struct mg_queue_t* q) {
-    mg_list_init(&q->items);
+    mg_fifo_init(&q->items);
     mg_smp_protect_init(&q->lock);
     q->length = 0;
 }
@@ -176,7 +182,7 @@ static inline void _mg_actor_insert(struct mg_actor_t* actor) {
     assert(actor->cpu < MG_CPU_MAX);
     struct mg_cpu_context_t* const context = MG_CPU_CONTEXT(actor->cpu);
     mg_smp_protect_acquire(&context->lock);
-    mg_list_append(&context->runq[actor->prio], &actor->link);
+    mg_fifo_enqueue(&context->runq[actor->prio], &actor->link);
     mg_smp_protect_release(&context->lock);
 }
 
@@ -193,11 +199,11 @@ static inline struct mg_message_t* mg_queue_pop(
     mg_smp_protect_acquire(&q->lock);
 
     if (q->length > 0) {
-        struct mg_list_t* const head = mg_list_unlink_head(&q->items);
-        msg = mg_list_entry(head, struct mg_message_t, link);
+        struct mg_node_t* const head = mg_fifo_dequeue(&q->items);
+        msg = mg_fifo_entry(head, struct mg_message_t, link);
         --q->length;
     } else if (subscriber != 0) {
-        mg_list_append(&q->items, &subscriber->link);
+        mg_fifo_enqueue(&q->items, &subscriber->link);
         --q->length;
     }
 
@@ -213,10 +219,10 @@ static inline void mg_queue_push(
     mg_smp_protect_acquire(&q->lock);
 
     if (q->length++ >= 0) {
-        mg_list_append(&q->items, &msg->link);
+        mg_fifo_enqueue(&q->items, &msg->link);
     } else {
-        struct mg_list_t* const head = mg_list_unlink_head(&q->items);
-        actor = mg_list_entry(head, struct mg_actor_t, link);
+        struct mg_node_t* const head = mg_fifo_dequeue(&q->items);
+        actor = mg_fifo_entry(head, struct mg_actor_t, link);
         actor->mailbox = msg;    
     }
 
@@ -268,19 +274,19 @@ static inline void mg_context_tick(void) {
     mg_smp_protect_acquire(&context->lock);
     const uint32_t oldticks = context->ticks++;
     const unsigned i = _mg_diff_msb(oldticks, context->ticks);
-    struct mg_list_t* const last = mg_list_last(&context->timerq[i]);
+    struct mg_node_t* const last = mg_fifo_last(&context->timerq[i]);
 
-    while (!mg_list_empty(&context->timerq[i])) {
+    while (!mg_fifo_empty(&context->timerq[i])) {
         struct mg_actor_t* actor_to_wake = 0;
-        struct mg_list_t* const head = mg_list_unlink_head(&context->timerq[i]);
-        struct mg_actor_t* const actor = mg_list_entry(head, struct mg_actor_t, link);
+        struct mg_node_t* const head = mg_fifo_dequeue(&context->timerq[i]);
+        struct mg_actor_t* const actor = mg_fifo_entry(head, struct mg_actor_t, link);
 
         if (actor->timeout == context->ticks) {
             actor->timeout = 0;
             actor_to_wake = actor;
         } else {
             const unsigned j = _mg_diff_msb(actor->timeout, context->ticks);
-            mg_list_append(&context->timerq[j], &actor->link);
+            mg_fifo_enqueue(&context->timerq[j], &actor->link);
         }
 
         mg_smp_protect_release(&context->lock);
@@ -305,7 +311,7 @@ static inline void _mg_actor_timeout(struct mg_actor_t* actor) {
     mg_smp_protect_acquire(&context->lock);
     actor->timeout += context->ticks;
     const unsigned i = _mg_diff_msb(context->ticks, actor->timeout);
-    mg_list_append(&context->timerq[i], &actor->link);
+    mg_fifo_enqueue(&context->timerq[i], &actor->link);
     mg_smp_protect_release(&context->lock);
 }
 
@@ -347,6 +353,7 @@ static inline void mg_actor_init(
     if (q) {
         struct mg_message_t* msg = mg_queue_pop(q, actor);
         assert(msg == 0);
+        (void) msg;
     } else if (func) {
         mg_actor_call(actor);
     }
@@ -364,14 +371,14 @@ static inline struct mg_actor_t* _mg_context_pop_head(unsigned vect, bool* last)
     struct mg_cpu_context_t* const context = MG_CPU_CONTEXT(mg_cpu_this());
     const unsigned prio = pic_vect2prio(vect);
     assert(prio < MG_PRIO_MAX);
-    struct mg_list_t* const runq = &context->runq[prio];
+    struct mg_fifo_t* const runq = &context->runq[prio];
     struct mg_actor_t* actor = 0;
     mg_smp_protect_acquire(&context->lock);
 
-    if (!mg_list_empty(runq)) {
-        struct mg_list_t* const head = mg_list_unlink_head(runq);
-        actor = mg_list_entry(head, struct mg_actor_t, link);
-        *last = mg_list_empty(runq);
+    if (!mg_fifo_empty(runq)) {
+        struct mg_node_t* const head = mg_fifo_dequeue(runq);
+        actor = mg_fifo_entry(head, struct mg_actor_t, link);
+        *last = mg_fifo_empty(runq);
     }
 
     mg_smp_protect_release(&context->lock);
@@ -387,3 +394,4 @@ static inline void mg_context_schedule(unsigned vect) {
 }
 
 #endif
+

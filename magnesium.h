@@ -120,12 +120,12 @@ struct mg_cpu_context_t {
 };
 
 struct mg_actor_t {
-    struct mg_queue_t* (*func)(struct mg_actor_t*, struct mg_message_t* restrict);
+    struct mg_queue_t* (*func)(struct mg_actor_t*, struct mg_message_t*);
     unsigned vect;
     unsigned cpu;
     unsigned prio;
     uint32_t timeout;
-    struct mg_message_t* restrict mailbox;
+    struct mg_message_t* mailbox;
     struct mg_node_t link;
 };
 
@@ -195,7 +195,7 @@ static inline struct mg_message_t* mg_queue_pop(
     struct mg_queue_t* q, 
     struct mg_actor_t* subscriber
 ) {
-    struct mg_message_t* restrict msg = 0;
+    struct mg_message_t* msg = 0;
     mg_smp_protect_acquire(&q->lock);
 
     if (q->length > 0) {
@@ -213,7 +213,7 @@ static inline struct mg_message_t* mg_queue_pop(
 
 static inline void mg_queue_push(
     struct mg_queue_t* q, 
-    struct mg_message_t* restrict msg
+    struct mg_message_t* msg
 ) {
     struct mg_actor_t* actor = 0;
     mg_smp_protect_acquire(&q->lock);
@@ -257,7 +257,7 @@ static inline void* mg_message_alloc(struct mg_message_pool_t* pool) {
     return msg;
 }
 
-static inline void mg_message_free(struct mg_message_t* restrict msg) {
+static inline void mg_message_free(struct mg_message_t* msg) {
     struct mg_message_pool_t* const pool = msg->parent;
     mg_queue_push(&pool->queue, msg);
 }
@@ -338,7 +338,7 @@ static inline void mg_actor_call(struct mg_actor_t* actor) {
 
 static inline void mg_actor_init(
     struct mg_actor_t* actor, 
-    struct mg_queue_t* (*func)(struct mg_actor_t*, struct mg_message_t* restrict),
+    struct mg_queue_t* (*func)(struct mg_actor_t*, struct mg_message_t*),
     unsigned int vect,
     struct mg_queue_t* q
 ) {
